@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from app.routes.github_webhooks import router as github_router
 print("hello")
+print("CodeSage Test")
 app = FastAPI()
 
 @app.get("/")

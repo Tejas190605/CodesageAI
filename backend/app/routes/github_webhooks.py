@@ -13,53 +13,118 @@ router = APIRouter()
 async def github_webhook(request: Request):
 
     payload = await request.json()
-    event = request.headers.get("X-GitHub-Event")
 
-    print("\n🔥 WEBHOOK RECEIVED:", event)
+    event = request.headers.get(
+        "X-GitHub-Event"
+    )
+
+    print(
+        "\n🔥 WEBHOOK RECEIVED:",
+        event
+    )
 
     # ======================
     # PUSH EVENT
     # ======================
+
     if event == "push":
 
-        for commit in payload.get("commits", []):
+        for commit in payload.get(
+            "commits",
+            []
+        ):
 
-            message = commit.get("message")
-
-            files = (
-                commit.get("modified", [])
-                + commit.get("added", [])
+            message = commit.get(
+                "message"
             )
 
-            print("\n--- PUSH COMMIT ---")
-            print("Message:", message)
-            print("Files:", files)
+            files = (
+                commit.get(
+                    "modified",
+                    []
+                )
+                +
+                commit.get(
+                    "added",
+                    []
+                )
+            )
 
-            ai_response = review_code(
-                message,
+            print(
+                "\n--- PUSH COMMIT ---"
+            )
+
+            print(
+                "Message:",
+                message
+            )
+
+            print(
+                "Files:",
                 files
             )
 
-            print("\n🤖 AI REVIEW:\n")
+            # Push files are strings,
+            # not dictionaries
+
+            ai_response = review_code(
+                message,
+                []
+            )
+
+            print(
+                "\n🤖 AI REVIEW:\n"
+            )
+
             print(ai_response)
 
     # ======================
     # PULL REQUEST EVENT
     # ======================
+
     elif event == "pull_request":
 
-        action = payload.get("action")
-        pr = payload.get("pull_request", {})
+        action = payload.get(
+            "action"
+        )
 
-        if action in ["opened", "synchronize"]:
+        pr = payload.get(
+            "pull_request",
+            {}
+        )
 
-            repo_name = payload["repository"]["full_name"]
-            pr_number = pr["number"]
-            pr_title = pr["title"]
+        if action in [
+            "opened",
+            "synchronize"
+        ]:
 
-            print("\n🔥 PR RECEIVED")
-            print("Repo:", repo_name)
-            print("PR:", pr_number)
+            repo_name = payload[
+                "repository"
+            ][
+                "full_name"
+            ]
+
+            pr_number = pr[
+                "number"
+            ]
+
+            pr_title = pr[
+                "title"
+            ]
+
+            print(
+                "\n🔥 PR RECEIVED"
+            )
+
+            print(
+                "Repo:",
+                repo_name
+            )
+
+            print(
+                "PR:",
+                pr_number
+            )
 
             files = get_pr_files(
                 repo_name,
@@ -75,8 +140,13 @@ async def github_webhook(request: Request):
                 files
             )
 
-            print("\n🤖 AI REVIEW:\n")
-            print(ai_review)
+            print(
+                "\n🤖 AI REVIEW:\n"
+            )
+
+            print(
+                ai_review
+            )
 
             comment_on_pr(
                 repo_name,
@@ -84,4 +154,6 @@ async def github_webhook(request: Request):
                 ai_review
             )
 
-    return {"status": "processed"}
+    return {
+        "status": "processed"
+    }

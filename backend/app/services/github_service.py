@@ -14,50 +14,34 @@ def get_headers():
     }
 
 
-def comment_on_pr(
-    repo_full_name,
-    pr_number,
-    comment
-):
+def comment_on_pr(repo_full_name, pr_number, comment):
 
-    url = (
-        f"https://api.github.com/repos/"
-        f"{repo_full_name}/issues/"
-        f"{pr_number}/comments"
-    )
+    url = f"https://api.github.com/repos/{repo_full_name}/issues/{pr_number}/comments"
 
     response = requests.post(
         url,
         headers=get_headers(),
-        json={"body": comment}
+        json={
+            "body": comment
+        }
     )
 
-    print(
-        "✅ GitHub Comment Status:",
-        response.status_code
-    )
+    print("✅ GitHub Comment Status:", response.status_code)
+
+    if response.status_code != 201:
+        print(response.text)
 
 
-def get_pr_files(
-    repo_full_name,
-    pr_number
-):
+def get_pr_files(repo_full_name, pr_number):
 
-    url = (
-        f"https://api.github.com/repos/"
-        f"{repo_full_name}/pulls/"
-        f"{pr_number}/files"
-    )
+    url = f"https://api.github.com/repos/{repo_full_name}/pulls/{pr_number}/files"
 
     response = requests.get(
         url,
         headers=get_headers()
     )
 
-    print(
-        "📂 Fetch PR Files:",
-        response.status_code
-    )
+    print("📂 Fetch PR Files:", response.status_code)
 
     if response.status_code != 200:
         print(response.text)

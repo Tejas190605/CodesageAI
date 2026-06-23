@@ -2,39 +2,66 @@ import os
 from dotenv import load_dotenv
 from google import genai
 
-# Load env
 load_dotenv()
 
-# Get API key
 api_key = os.getenv("GEMINI_API_KEY")
 
 print("GEMINI KEY LOADED:", api_key is not None)
 
 if not api_key:
-    raise ValueError("❌ GOOGLE_API_KEY not found. Check .env file.")
+    raise ValueError("❌ GEMINI_API_KEY not found")
 
-# Create client
 client = genai.Client(api_key=api_key)
 
 
-def review_code(commit_message, files):
+def review_code(title, files):
+
     try:
+
+        file_text = ""
+
+        for file in files:
+
+            filename = file.get("filename", "unknown")
+
+            patch = file.get("patch", "")
+
+            file_text += f"""
+
+FILE: {filename}
+
+CODE CHANGES:
+
+{patch}
+
+=================================
+"""
+
         prompt = f"""
-You are a senior software engineer.
+You are a Senior Software Engineer.
 
-Review this GitHub change:
+Review this Pull Request.
 
-Commit Message:
-{commit_message}
+TITLE:
+{title}
 
-Files Changed:
-{files}
+FILES:
+
+{file_text}
 
 Give:
-1. Issues
-2. Improvements
-3. Suggestions
-4. Rating out of 10
+
+## Issues
+
+## Improvements
+
+## Suggestions
+
+## Security Concerns
+
+## Rating /10
+
+Keep review professional.
 """
 
         response = client.models.generate_content(

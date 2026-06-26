@@ -2,23 +2,33 @@ from fastapi import APIRouter, Request, BackgroundTasks
 
 from app.services.ai_review import review_code
 from app.services.github_service import (
+    get_pr_files,
     comment_on_pr,
-    get_pr_files
 )
 
 router = APIRouter()
 
 
-def process_push(payload):
-    print("\n🔥 WEBHOOK RECEIVED: push")
+@router.post("/webhook")
+async def github_webhook(request: Request, background_tasks: BackgroundTasks):
 
-    for commit in payload.get("commits", []):
+    payload = await request.json()
+    event = request.headers.get("X-GitHub-Event")
 
-        message = commit.get("message")
+    print(f"\n🔥 WEBHOOK RECEIVED: {event}")
+
+    # ----------------------------
+    # PUSH EVENT
+    # ----------------------------
+    if event == "push":
+
+        commit = payload["head_commit"]
+
+        message = commit["message"]
 
         files = (
-            commit.get("modified", [])
-            + commit.get("added", [])
+            commit.get("added", [])
+            + commit.get("modified", [])
             + commit.get("removed", [])
         )
 
@@ -26,54 +36,80 @@ def process_push(payload):
         print("Message:", message)
         print("Files:", files)
 
-        ai_review = review_code(message, files)
+        background_tasks.add_task(
+            process_push,
+            message,
+            files
+        )
 
-        print("\n🤖 AI REVIEW:\n")
-        print(ai_review)
+    # ----------------------------
+    # PULL REQUEST EVENT
+    # ----------------------------
+    elif event == "pull_request":
+
+        action = payload["action"]
+
+        if action not in ["opened", "synchronize", "reopened"]:
+            return {"status": "ignored"}
+
+        pr = payload["pull_request"]
+
+        owner = payload["repository"]["owner"]["login"]
+        repo = payload["repository"]["name"]
+
+        pr_number = pr["number"]
+        pr_title = pr["title"]
+
+        print("\n📥 PR RECEIVED")
+        print("Repo:", f"{owner}/{repo}")
+        print("PR:", pr_number)
+
+        background_tasks.add_task(
+            process_pr,
+            owner,
+            repo,
+            pr_number,
+            pr_title
+        )
+
+    return {"status": "received"}
 
 
-def process_pr(payload):
-    print("\n🔥 WEBHOOK RECEIVED: pull_request")
+# ====================================================
+# PUSH BACKGROUND TASK
+# ====================================================
 
-    action = payload.get("action")
+def process_push(message, files):
 
-    if action not in ["opened", "synchronize"]:
-        return
-
-    repo = payload["repository"]["full_name"]
-    pr = payload["pull_request"]
-    pr_number = pr["number"]
-    title = pr["title"]
-
-    print("\n📥 PR RECEIVED")
-    print("Repo:", repo)
-    print("PR:", pr_number)
-
-    files = get_pr_files(repo, pr_number)
-
-    ai_review = review_code(title, files)
+    review = review_code(message, files)
 
     print("\n🤖 AI REVIEW:\n")
-    print(ai_review)
-
-    comment_on_pr(repo, pr_number, ai_review)
+    print(review)
 
 
-@router.post("/webhook")
-async def github_webhook(
-    request: Request,
-    background_tasks: BackgroundTasks
-):
-    payload = await request.json()
+# ====================================================
+# PR BACKGROUND TASK
+# ====================================================
 
-    event = request.headers.get("X-GitHub-Event")
+def process_pr(owner, repo, pr_number, pr_title):
 
-    if event == "push":
-        background_tasks.add_task(process_push, payload)
+    files = get_pr_files(owner, repo, pr_number)
 
-    elif event == "pull_request":
-        background_tasks.add_task(process_pr, payload)
+    print("📂 Files fetched:", len(files))
 
-    return {
-        "status": "accepted"
-    }
+    review = review_code(
+        pr_title,
+        files
+    )
+
+    print("\n🤖 AI REVIEW:\n")
+    print(review)
+
+    status = comment_on_pr(
+        owner,
+        repo,
+        pr_number,
+        review
+    )
+
+    print("✅ GitHub Comment Status:", status)

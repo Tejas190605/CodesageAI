@@ -32,19 +32,31 @@ def comment_on_pr(repo_full_name, pr_number, comment):
         print(response.text)
 
 
-def get_pr_files(repo_full_name, pr_number):
+def get_pr_files(owner, repo, pr_number):
+    """
+    Returns the ACTUAL code changes (diffs)
+    instead of only filenames.
+    """
 
-    url = f"https://api.github.com/repos/{repo_full_name}/pulls/{pr_number}/files"
+    url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/files"
 
-    response = requests.get(
-        url,
-        headers=get_headers()
-    )
+    response = requests.get(url, headers=headers)
 
     print("📂 Fetch PR Files:", response.status_code)
 
     if response.status_code != 200:
-        print(response.text)
         return []
 
-    return response.json()
+    files = response.json()
+
+    review_data = []
+
+    for file in files:
+
+        review_data.append({
+            "filename": file.get("filename"),
+            "status": file.get("status"),
+            "patch": file.get("patch", "No patch available")
+        })
+
+    return review_data

@@ -17,51 +17,60 @@ client = genai.Client(api_key=api_key)
 
 def review_code(commit_message, files):
 
-    prompt = f"""
-You are a Senior Software Engineer performing a GitHub code review.
+    try:
 
-Review the following code changes.
+        code_changes = ""
 
-Commit / PR Title:
-{commit_message}
+        for file in files:
 
-Changed Files:
-{files}
+            code_changes += f"""
 
-Provide:
+==========================
+FILE: {file['filename']}
+STATUS: {file['status']}
+==========================
 
-## Security Issues
-## Bug Risks
-## Code Quality
-## Performance Concerns
-## Best Practice Suggestions
-## Overall Rating (/10)
+{file['patch']}
 
-Be specific and practical.
 """
 
-    max_retries = 3
+        prompt = f"""
+You are a Senior Software Engineer.
 
-    for attempt in range(max_retries):
+Review the following GitHub Pull Request.
 
-        try:
-            response = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=prompt
-            )
+Commit Message:
+{commit_message}
 
-            return response.text
+Code Changes:
 
-        except Exception as e:
+{code_changes}
 
-            error_text = str(e)
+Review in this exact format.
 
-            print(f"⚠ Gemini Attempt {attempt + 1} Failed:")
-            print(error_text)
+## Security Issues
 
-            if attempt < max_retries - 1:
-                wait_time = 2 ** attempt
-                print(f"🔄 Retrying in {wait_time}s...")
-                time.sleep(wait_time)
-            else:
-                return f"❌ AI Error: {error_text}"
+## Bug Risks
+
+## Code Quality
+
+## Performance Concerns
+
+## Best Practice Suggestions
+
+## Overall Rating (/10)
+
+Only review the ACTUAL code changes.
+
+Do not mention that the diff is missing.
+"""
+
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt
+        )
+
+        return response.text
+
+    except Exception as e:
+        return f"AI Error: {e}"

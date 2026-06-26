@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, BackgroundTasks
 
 from app.services.ai_review import review_code
 from app.services.github_service import (
@@ -9,151 +9,71 @@ from app.services.github_service import (
 router = APIRouter()
 
 
-@router.post("/webhook")
-async def github_webhook(request: Request):
+def process_push(payload):
+    print("\n🔥 WEBHOOK RECEIVED: push")
 
+    for commit in payload.get("commits", []):
+
+        message = commit.get("message")
+
+        files = (
+            commit.get("modified", [])
+            + commit.get("added", [])
+            + commit.get("removed", [])
+        )
+
+        print("\n--- PUSH COMMIT ---")
+        print("Message:", message)
+        print("Files:", files)
+
+        ai_review = review_code(message, files)
+
+        print("\n🤖 AI REVIEW:\n")
+        print(ai_review)
+
+
+def process_pr(payload):
+    print("\n🔥 WEBHOOK RECEIVED: pull_request")
+
+    action = payload.get("action")
+
+    if action not in ["opened", "synchronize"]:
+        return
+
+    repo = payload["repository"]["full_name"]
+    pr = payload["pull_request"]
+    pr_number = pr["number"]
+    title = pr["title"]
+
+    print("\n📥 PR RECEIVED")
+    print("Repo:", repo)
+    print("PR:", pr_number)
+
+    files = get_pr_files(repo, pr_number)
+
+    ai_review = review_code(title, files)
+
+    print("\n🤖 AI REVIEW:\n")
+    print(ai_review)
+
+    comment_on_pr(repo, pr_number, ai_review)
+
+
+@router.post("/webhook")
+async def github_webhook(
+    request: Request,
+    background_tasks: BackgroundTasks
+):
     payload = await request.json()
 
-    event = request.headers.get(
-        "X-GitHub-Event"
-    )
-
-    print(
-        "\n🔥 WEBHOOK RECEIVED:",
-        event
-    )
-
-    # ======================
-    # PUSH EVENT
-    # ======================
+    event = request.headers.get("X-GitHub-Event")
 
     if event == "push":
-
-        for commit in payload.get(
-            "commits",
-            []
-        ):
-
-            message = commit.get(
-                "message"
-            )
-
-            files = (
-                commit.get(
-                    "modified",
-                    []
-                )
-                +
-                commit.get(
-                    "added",
-                    []
-                )
-            )
-
-            print(
-                "\n--- PUSH COMMIT ---"
-            )
-
-            print(
-                "Message:",
-                message
-            )
-
-            print(
-                "Files:",
-                files
-            )
-
-            # Push files are strings,
-            # not dictionaries
-
-            ai_response = review_code(
-                message,
-                []
-            )
-
-            print(
-                "\n🤖 AI REVIEW:\n"
-            )
-
-            print(ai_response)
-
-    # ======================
-    # PULL REQUEST EVENT
-    # ======================
+        background_tasks.add_task(process_push, payload)
 
     elif event == "pull_request":
-
-        action = payload.get(
-            "action"
-        )
-
-        pr = payload.get(
-            "pull_request",
-            {}
-        )
-
-        if action in [
-            "opened",
-            "synchronize"
-        ]:
-
-            repo_name = payload[
-                "repository"
-            ][
-                "full_name"
-            ]
-
-            pr_number = pr[
-                "number"
-            ]
-
-            pr_title = pr[
-                "title"
-            ]
-
-            print(
-                "\n🔥 PR RECEIVED"
-            )
-
-            print(
-                "Repo:",
-                repo_name
-            )
-
-            print(
-                "PR:",
-                pr_number
-            )
-
-            files = get_pr_files(
-                repo_name,
-                pr_number
-            )
-
-            print(
-                f"📂 Files fetched: {len(files)}"
-            )
-
-            ai_review = review_code(
-                pr_title,
-                files
-            )
-
-            print(
-                "\n🤖 AI REVIEW:\n"
-            )
-
-            print(
-                ai_review
-            )
-
-            comment_on_pr(
-                repo_name,
-                pr_number,
-                ai_review
-            )
+        background_tasks.add_task(process_pr, payload)
 
     return {
-        "status": "processed"
+        "status": "accepted"
     }

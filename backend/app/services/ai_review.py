@@ -1,4 +1,5 @@
 import os
+import time
 from dotenv import load_dotenv
 from google import genai
 
@@ -9,67 +10,58 @@ api_key = os.getenv("GEMINI_API_KEY")
 print("GEMINI KEY LOADED:", api_key is not None)
 
 if not api_key:
-    raise ValueError("❌ GEMINI_API_KEY not found")
+    raise ValueError("❌ GEMINI_API_KEY not found.")
 
 client = genai.Client(api_key=api_key)
 
 
-def review_code(title, files):
+def review_code(commit_message, files):
 
-    try:
+    prompt = f"""
+You are a Senior Software Engineer performing a GitHub code review.
 
-        file_text = ""
+Review the following code changes.
 
-        for file in files:
+Commit / PR Title:
+{commit_message}
 
-            filename = file.get("filename", "unknown")
+Changed Files:
+{files}
 
-            patch = file.get("patch", "")
+Provide:
 
-            file_text += f"""
+## Security Issues
+## Bug Risks
+## Code Quality
+## Performance Concerns
+## Best Practice Suggestions
+## Overall Rating (/10)
 
-FILE: {filename}
-
-CODE CHANGES:
-
-{patch}
-
-=================================
+Be specific and practical.
 """
 
-        prompt = f"""
-You are a Senior Software Engineer.
+    max_retries = 3
 
-Review this Pull Request.
+    for attempt in range(max_retries):
 
-TITLE:
-{title}
+        try:
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=prompt
+            )
 
-FILES:
+            return response.text
 
-{file_text}
+        except Exception as e:
 
-Give:
+            error_text = str(e)
 
-## Issues
+            print(f"⚠ Gemini Attempt {attempt + 1} Failed:")
+            print(error_text)
 
-## Improvements
-
-## Suggestions
-
-## Security Concerns
-
-## Rating /10
-
-Keep review professional.
-"""
-
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt
-        )
-
-        return response.text
-
-    except Exception as e:
-        return f"❌ AI Error: {str(e)}"
+            if attempt < max_retries - 1:
+                wait_time = 2 ** attempt
+                print(f"🔄 Retrying in {wait_time}s...")
+                time.sleep(wait_time)
+            else:
+                return f"❌ AI Error: {error_text}"

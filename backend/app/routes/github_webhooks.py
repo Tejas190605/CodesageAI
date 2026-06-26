@@ -1,5 +1,7 @@
 from fastapi import APIRouter, Request, BackgroundTasks
 
+from app.security.github_signature import verify_github_signature
+
 from app.services.ai_review import review_code
 from app.services.github_service import (
     get_pr_files,
@@ -10,27 +12,40 @@ router = APIRouter()
 
 
 # ======================================================
-# WEBHOOK
+# GITHUB WEBHOOK
 # ======================================================
 
 @router.post("/webhook")
-async def github_webhook(request: Request, background_tasks: BackgroundTasks):
+async def github_webhook(
+    request: Request,
+    background_tasks: BackgroundTasks
+):
 
+    # Read RAW body FIRST
+    body = await request.body()
+
+    # Get GitHub signature
+    signature = request.headers.get("X-Hub-Signature-256")
+
+    # Verify webhook
+    verify_github_signature(signature, body)
+
+    # Parse JSON only AFTER verification
     payload = await request.json()
 
     event = request.headers.get("X-GitHub-Event")
 
     print(f"\n🔥 WEBHOOK RECEIVED: {event}")
 
-    # ------------------------
-    # PUSH
-    # ------------------------
+    # ==================================================
+    # PUSH EVENT
+    # ==================================================
 
     if event == "push":
 
-        commit = payload["head_commit"]
+        commit = payload.get("head_commit", {})
 
-        message = commit["message"]
+        message = commit.get("message", "")
 
         filenames = (
             commit.get("added", [])
@@ -48,13 +63,13 @@ async def github_webhook(request: Request, background_tasks: BackgroundTasks):
             filenames
         )
 
-    # ------------------------
-    # PULL REQUEST
-    # ------------------------
+    # ==================================================
+    # PULL REQUEST EVENT
+    # ==================================================
 
     elif event == "pull_request":
 
-        action = payload["action"]
+        action = payload.get("action")
 
         if action not in [
             "opened",
@@ -63,15 +78,17 @@ async def github_webhook(request: Request, background_tasks: BackgroundTasks):
         ]:
             return {"status": "ignored"}
 
-        owner = payload["repository"]["owner"]["login"]
+        repository = payload.get("repository", {})
 
-        repo = payload["repository"]["name"]
+        owner = repository.get("owner", {}).get("login")
 
-        pr = payload["pull_request"]
+        repo = repository.get("name")
 
-        pr_number = pr["number"]
+        pr = payload.get("pull_request", {})
 
-        pr_title = pr["title"]
+        pr_number = pr.get("number")
+
+        pr_title = pr.get("title")
 
         print("\n📥 PR RECEIVED")
         print("Repo:", f"{owner}/{repo}")
@@ -85,7 +102,9 @@ async def github_webhook(request: Request, background_tasks: BackgroundTasks):
             pr_title
         )
 
-    return {"status": "received"}
+    return {
+        "status": "received"
+    }
 
 
 # ======================================================
@@ -101,10 +120,13 @@ def process_push(message, filenames):
         files.append({
             "filename": filename,
             "status": "modified",
-            "patch": "Push event contains filename only."
+            "patch": "Push webhook contains filenames only."
         })
 
-    review = review_code(message, files)
+    review = review_code(
+        message,
+        files
+    )
 
     print("\n🤖 AI REVIEW:\n")
     print(review)
@@ -114,7 +136,12 @@ def process_push(message, filenames):
 # PR REVIEW
 # ======================================================
 
-def process_pr(owner, repo, pr_number, pr_title):
+def process_pr(
+    owner,
+    repo,
+    pr_number,
+    pr_title
+):
 
     files = get_pr_files(
         owner,
@@ -132,8 +159,10 @@ def process_pr(owner, repo, pr_number, pr_title):
     print("\n🤖 AI REVIEW:\n")
     print(review)
 
-    comment_on_pr(
+    status = comment_on_pr(
         f"{owner}/{repo}",
         pr_number,
         review
     )
+
+    print("✅ GitHub Comment Status:", status)

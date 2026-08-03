@@ -1,4 +1,4 @@
-# CodeSage AI — AI Developer Assistant & Code Review Suite
+# CodeSage AI — AI Developer Assistant & Automated GitHub Code Review Platform
 
 CodeSage AI is an intelligent automated code review engine and developer dashboard. It seamlessly connects to GitHub repositories via Webhooks, fetches Pull Request diffs, performs structured multi-dimensional code analysis using Google Gemini AI, posts formatted reviews directly to PR discussion threads, and presents a modern Next.js developer dashboard for monitoring repository health and code quality metrics.
 
@@ -67,17 +67,20 @@ codesage-ai/
 │   │   ├── services/                       # Gemini AI, GitHub Service, Delivery Tracker
 │   │   └── utils/                          # Diff Filtering & Budgeting Utilities
 │   ├── tests/                              # 74 Pytest Unit & Integration Tests
-│   ├── .github/workflows/backend-tests.yml # Automated GitHub Actions CI Workflow
 │   ├── requirements.txt                    # Production Dependencies
 │   └── .env.example                        # Backend Environment Template
-└── frontend/                               # Next.js 16 Developer Dashboard
-    ├── src/
-    │   ├── app/                            # App Router Routes (/, /repos, /settings)
-    │   ├── components/                     # Layout & UI Components
-    │   └── lib/                            # API Client & TypeScript Types
-    ├── package.json                        # Frontend Dependencies
-    ├── .env.local.example                  # Frontend Environment Template
-    └── README.md                           # Frontend Component Documentation
+├── frontend/                               # Next.js 16 Developer Dashboard
+│   ├── src/
+│   │   ├── app/                            # App Router Routes (/, /repos, /settings)
+│   │   ├── components/                     # Layout & UI Components
+│   │   └── lib/                            # API Client & TypeScript Types
+│   ├── package.json                        # Frontend Dependencies
+│   ├── .env.local.example                  # Frontend Environment Template
+│   └── README.md                           # Frontend Component Documentation
+├── .github/workflows/                      # GitHub Actions CI Workflows
+│   ├── backend-tests.yml                   # Automated Backend Pytest CI Workflow
+│   └── frontend-tests.yml                  # Automated Frontend Next.js Lint & Build CI
+└── README.md                               # Root Monorepo Documentation
 ```
 
 ---
@@ -116,8 +119,8 @@ python -m venv venv
 # On Linux/macOS:
 source venv/bin/activate
 
-pip install -r requirements.txt
-python -m uvicorn app.main:app --port 8000
+pip install -r requirements-dev.txt
+python -m uvicorn app.main:app --reload
 ```
 
 Backend will start at `http://127.0.0.1:8000`.
@@ -154,6 +157,19 @@ npm run build
 
 ---
 
+## Development Workflow
+
+To contribute or add new features to CodeSage AI:
+
+1. Start from an up-to-date `main` branch: `git checkout main && git pull origin main`
+2. Create a focused feature branch: `git checkout -b feature/my-feature`
+3. Implement changes and verify locally with automated tests (`pytest`, `npm run lint`, `npm run build`).
+4. Commit focused code changes with clear commit messages.
+5. Push your feature branch normally: `git push -u origin feature/my-feature`
+6. Open a Pull Request targeting `main`. Both Backend CI and Frontend CI must pass before merging.
+
+---
+
 ## GitHub Webhook Integration Setup
 
 1. Start an ngrok tunnel pointing to port 8000:
@@ -183,4 +199,6 @@ npm run build
 * [x] **Phase 2**: Backend Hardening, Retries, Diff Limits, Webhook Security, & Pytest Suite
 * [x] **Phase 3A-3E**: Structured Gemini AI Review Engine, Dashboard REST APIs, & Next.js 16 Frontend MVP
 * [x] **Phase 3F**: Webhook Idempotency Tracker, End-to-End Verification, & MVP Local Release Checkpoint
+* [x] **Phase 3G-3J**: Unified Monorepo Migration, Controlled Main Branch Alignment, & Dual Monorepo CI
+* [x] **Phase 3K**: Post-Migration Stabilization & Standard Development Workflow Validation
 * [ ] **Phase 4**: PostgreSQL Persistence, Redis Worker Queues, GitHub App OAuth Auth, & Production Deployment

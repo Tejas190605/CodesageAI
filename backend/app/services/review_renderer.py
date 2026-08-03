@@ -1,5 +1,9 @@
-from typing import List, Dict
+import re
+from typing import List, Dict, Optional
 from app.models.review import StructuredReview, ReviewCategory, ReviewSeverity
+
+# Centralized header marker for identifying CodeSage review comments
+CODESAGE_REVIEW_MARKER = "# CodeSage AI Review"
 
 # Category display metadata mapping
 CATEGORY_HEADERS: Dict[ReviewCategory, str] = {
@@ -20,6 +24,41 @@ SEVERITY_BADGES: Dict[ReviewSeverity, str] = {
 }
 
 
+def is_codesage_review_comment(body: str) -> bool:
+    """
+    Determines whether a comment body originated from CodeSage AI.
+    Checks for the canonical header marker.
+    """
+    if not body:
+        return False
+    return CODESAGE_REVIEW_MARKER in body
+
+
+def extract_overall_rating_from_markdown(body: str) -> Optional[int]:
+    """
+    Attempts to extract the numeric overall score rating (1 to 10) from a CodeSage review Markdown comment.
+    Looks for standard block format: '## Overall Rating\\n**8/10**' or '**X/10**'.
+    Returns None if format does not match cleanly or is out of bounds.
+    """
+    if not body or not is_codesage_review_comment(body):
+        return None
+
+    # Search for bold rating format e.g. **8/10** or **10/10**
+    match = re.search(r"\*\*(\d{1,2})/10\*\*", body)
+    if not match:
+        match = re.search(r"Overall Rating.*?\b(\d{1,2})/10\b", body, re.IGNORECASE)
+
+    if match:
+        try:
+            score = int(match.group(1))
+            if 1 <= score <= 10:
+                return score
+        except ValueError:
+            pass
+
+    return None
+
+
 def render_review_markdown(review: StructuredReview) -> str:
     """
     Converts a strongly-typed StructuredReview instance into a clean, professional GitHub Markdown comment string.
@@ -31,7 +70,7 @@ def render_review_markdown(review: StructuredReview) -> str:
         Formatted GitHub Markdown string.
     """
     sections = [
-        "# CodeSage AI Review\n",
+        f"{CODESAGE_REVIEW_MARKER}\n",
         f"## Summary\n{review.summary.strip()}\n",
         f"## Overall Rating\n**{review.overall_rating}/10**\n"
     ]

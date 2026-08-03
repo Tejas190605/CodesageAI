@@ -1,5 +1,5 @@
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import requests
 from tenacity import (
     retry,
@@ -35,6 +35,10 @@ def _get_headers() -> Dict[str, str]:
     }
 
 
+# ======================================================
+# PR FILES
+# ======================================================
+
 @retry(
     stop=stop_after_attempt(3),
     wait=wait_exponential(min=1, max=6),
@@ -61,15 +65,6 @@ def _fetch_pr_files_page(owner: str, repo: str, pr_number: int, page: int, per_p
 def get_pr_files(owner: str, repo: str, pr_number: int, max_pages: int = 10) -> List[Dict[str, str]]:
     """
     Fetches all changed files for a pull request using GitHub REST API pagination.
-
-    Args:
-        owner: Repository owner/organization name.
-        repo: Repository name.
-        pr_number: Pull request ID number.
-        max_pages: Maximum number of pages to fetch defensively (default 10 pages / 1000 files).
-
-    Returns:
-        List of file dictionaries containing filename, status, and patch string.
     """
     all_files: List[Dict[str, str]] = []
     page = 1
@@ -91,7 +86,6 @@ def get_pr_files(owner: str, repo: str, pr_number: int, max_pages: int = 10) -> 
                 })
 
             if len(github_files) < per_page:
-                # Reached last page
                 break
 
             page += 1
@@ -104,26 +98,162 @@ def get_pr_files(owner: str, repo: str, pr_number: int, max_pages: int = 10) -> 
         return []
 
 
+# ======================================================
+# REPOSITORY METADATA READ API
+# ======================================================
+
 @retry(
     stop=stop_after_attempt(3),
     wait=wait_exponential(min=1, max=6),
     retry=retry_if_exception(_is_transient_github_error),
-    before_sleep=lambda retry_state: logger.warning(
-        f"Retrying GitHub PR comment posting (attempt {retry_state.attempt_number})..."
-    ),
+    before_sleep=lambda retry_state: logger.warning("Retrying GitHub get_repository request..."),
+    reraise=True
+)
+def get_repository(owner: str, repo: str) -> Optional[Dict[str, Any]]:
+    """
+    Fetches repository metadata from GitHub REST API (GET /repos/{owner}/{repo}).
+    Returns None if repository does not exist (404) or on error.
+    """
+    url = f"https://api.github.com/repos/{owner}/{repo}"
+    try:
+        response = requests.get(url, headers=_get_headers(), timeout=settings.GITHUB_API_TIMEOUT)
+        if response.status_code == 404:
+            logger.warning(f"Repository {owner}/{repo} not found on GitHub (404).")
+            return None
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        logger.error(f"Failed to fetch repository metadata for {owner}/{repo}: {e}")
+        return None
+
+
+# ======================================================
+# PULL REQUEST READ APIs
+# ======================================================
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(min=1, max=6),
+    retry=retry_if_exception(_is_transient_github_error),
+    before_sleep=lambda retry_state: logger.warning("Retrying GitHub list_pull_requests page..."),
+    reraise=True
+)
+def _fetch_pull_requests_page(owner: str, repo: str, state: str, page: int, per_page: int = 100) -> List[Dict[str, Any]]:
+    url = f"https://api.github.com/repos/{owner}/{repo}/pulls"
+    params = {"state": state, "page": page, "per_page": per_page}
+    response = requests.get(url, headers=_get_headers(), params=params, timeout=settings.GITHUB_API_TIMEOUT)
+    if response.status_code == 404:
+        return []
+    response.raise_for_status()
+    return response.json()
+
+
+def list_pull_requests(owner: str, repo: str, state: str = "all", max_pages: int = 5) -> List[Dict[str, Any]]:
+    """
+    Lists pull requests for a repository using GitHub REST API pagination.
+    """
+    all_prs: List[Dict[str, Any]] = []
+    page = 1
+    per_page = 100
+
+    try:
+        while page <= max_pages:
+            prs_page = _fetch_pull_requests_page(owner, repo, state=state, page=page, per_page=per_page)
+            if not prs_page:
+                break
+            all_prs.extend(prs_page)
+            if len(prs_page) < per_page:
+                break
+            page += 1
+
+        return all_prs
+    except Exception as e:
+        logger.error(f"Failed to list pull requests for {owner}/{repo}: {e}")
+        return []
+
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(min=1, max=6),
+    retry=retry_if_exception(_is_transient_github_error),
+    before_sleep=lambda retry_state: logger.warning("Retrying GitHub get_pull_request..."),
+    reraise=True
+)
+def get_pull_request(owner: str, repo: str, pr_number: int) -> Optional[Dict[str, Any]]:
+    """
+    Fetches detailed metadata for a single pull request (GET /repos/{owner}/{repo}/pulls/{pr_number}).
+    """
+    url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}"
+    try:
+        response = requests.get(url, headers=_get_headers(), timeout=settings.GITHUB_API_TIMEOUT)
+        if response.status_code == 404:
+            return None
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        logger.error(f"Failed to fetch pull request {owner}/{repo}#{pr_number}: {e}")
+        return None
+
+
+# ======================================================
+# ISSUE COMMENTS READ API
+# ======================================================
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(min=1, max=6),
+    retry=retry_if_exception(_is_transient_github_error),
+    before_sleep=lambda retry_state: logger.warning("Retrying GitHub list_issue_comments page..."),
+    reraise=True
+)
+def _fetch_issue_comments_page(owner: str, repo: str, issue_number: int, page: int, per_page: int = 100) -> List[Dict[str, Any]]:
+    url = f"https://api.github.com/repos/{owner}/{repo}/issues/{issue_number}/comments"
+    params = {"page": page, "per_page": per_page}
+    response = requests.get(url, headers=_get_headers(), params=params, timeout=settings.GITHUB_API_TIMEOUT)
+    if response.status_code == 404:
+        return []
+    response.raise_for_status()
+    return response.json()
+
+
+def list_issue_comments(owner: str, repo: str, issue_number: int, max_pages: int = 5) -> List[Dict[str, Any]]:
+    """
+    Lists comments for an issue / pull request using GitHub REST API pagination.
+    """
+    all_comments: List[Dict[str, Any]] = []
+    page = 1
+    per_page = 100
+
+    try:
+        while page <= max_pages:
+            comments_page = _fetch_issue_comments_page(owner, repo, issue_number, page=page, per_page=per_page)
+            if not comments_page:
+                break
+            all_comments.extend(comments_page)
+            if len(comments_page) < per_page:
+                break
+            page += 1
+
+        return all_comments
+    except Exception as e:
+        logger.error(f"Failed to list issue comments for {owner}/{repo}#{issue_number}: {e}")
+        return []
+
+
+# ======================================================
+# COMMENT ON PR (POST)
+# ======================================================
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(min=1, max=6),
+    retry=retry_if_exception(_is_transient_github_error),
+    before_sleep=lambda retry_state: logger.warning("Retrying GitHub comment_on_pr..."),
     reraise=True
 )
 def comment_on_pr(repo_full_name: str, pr_number: int, comment: str) -> int:
     """
     Posts a review comment to a GitHub Pull Request thread.
-
-    Args:
-        repo_full_name: Repository in 'owner/repo' format.
-        pr_number: Pull request ID number.
-        comment: Markdown comment content to post.
-
-    Returns:
-        HTTP status code (201 on success).
     """
     url = f"https://api.github.com/repos/{repo_full_name}/issues/{pr_number}/comments"
 

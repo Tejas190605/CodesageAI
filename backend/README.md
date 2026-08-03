@@ -7,9 +7,13 @@ AI-powered GitHub Pull Request code reviewer built with FastAPI, GitHub Webhooks
 * **GitHub Webhook Integration**: Listens for GitHub `push` and `pull_request` webhook events via FastAPI.
 * **Webhook Signature Verification**: Verifies incoming GitHub payload authenticity using HMAC-SHA256 and `X-Hub-Signature-256`.
 * **Asynchronous Processing**: Uses FastAPI `BackgroundTasks` to quickly acknowledge webhooks (HTTP 200) and prevent GitHub timeouts.
-* **PR File & Diff Retrieval**: Queries GitHub REST API to fetch modified files and line-by-line patch diffs.
-* **AI Code Review Generation**: Uses `google-genai` SDK (`gemini-2.5-flash`) to generate structured code reviews (Security, Bug Risks, Code Quality, Performance, Best Practices, Overall Rating).
+* **GitHub PR File Pagination**: Fetches up to 1,000 modified files per PR across multiple pages (`per_page=100`).
+* **Non-Reviewable File Filtering**: Automatically excludes lockfiles, minified code, binary/image files, and vendor/build directories from AI prompts.
+* **Diff Truncation & Token Budgeting**: Caps file patch sizes (`12,000` chars/file) and overall diff size (`60,000` chars total) to prevent LLM context overflows.
+* **Gemini 2.5 Flash AI Integration**: Generates structured code reviews (Security, Bug Risks, Code Quality, Performance, Best Practices, Overall Rating).
+* **Transient Error Retry Policy**: Bounded exponential backoff retries via `tenacity` for transient Gemini API errors (429/503) and GitHub REST API drops.
 * **Automated PR Commenting**: Posts generated AI reviews directly to the GitHub PR discussion thread.
+* **Health Monitoring Endpoint**: Includes `GET /health` for service health checks.
 
 ## Architecture
 
@@ -25,17 +29,22 @@ GitHub PR Comments  <--  Gemini 2.5 Flash Review  <--  Fetch PR Patch Diffs (Git
 ```
 backend/
 ├── app/
-│   ├── main.py                 # FastAPI application entrypoint
+│   ├── main.py                 # FastAPI application entrypoint & health routes
+│   ├── config.py               # Centralized Pydantic settings
 │   ├── routes/
 │   │   └── github_webhooks.py  # Webhook route handler & background processor
 │   ├── security/
 │   │   └── github_signature.py # HMAC SHA-256 signature verification
-│   └── services/
-│       ├── ai_review.py        # Gemini AI prompt formatting & API integration
-│       └── github_service.py   # GitHub REST API client (files & comments)
+│   ├── services/
+│   │   ├── ai_review.py        # Gemini AI prompt formatting & API integration
+│   │   └── github_service.py   # GitHub REST API client (paginated files & comments)
+│   └── utils/
+│       └── diff_utils.py       # File filtering & diff truncation logic
+├── tests/                      # Pytest automated test suite
 ├── .env                        # Local environment secrets (untracked)
 ├── .gitignore                  # Git ignore patterns
-└── requirements.txt            # Python dependencies
+├── requirements.txt            # Production Python dependencies
+└── requirements-dev.txt        # Development & testing dependencies
 ```
 
 ## Requirements
@@ -88,6 +97,24 @@ uvicorn app.main:app --reload --port 8000
 
 The server will be available at `http://localhost:8000`.
 
+## Testing
+
+The backend includes a comprehensive automated pytest test suite covering API routes, signature verification, REST API pagination and retries, file filtering, diff truncation, and prompt safety.
+
+To run the tests:
+
+1. Install development dependencies:
+   ```bash
+   pip install -r requirements-dev.txt
+   ```
+
+2. Run pytest:
+   ```bash
+   python -m pytest -v
+   ```
+
+> **Note**: All external API calls (GitHub REST API and Google Gemini API) are completely mocked during testing and do not perform network requests or require live API credentials.
+
 ## GitHub Webhook Setup
 
 1. Expose your local port via ngrok or similar tunneling service:
@@ -100,18 +127,8 @@ The server will be available at `http://localhost:8000`.
    * **Secret**: `<Your GITHUB_WEBHOOK_SECRET>`
    * **Events**: Select `Pull requests` and `Pushes`.
 
-## Current Limitations
-
-* **No Gemini Retries**: Lacks automatic exponential backoff for Gemini 429/503 errors.
-* **Single-Page File Fetching**: Does not paginate PR file results (>30 files per PR).
-* **Basic Token Budgeting**: No diff chunking or truncation for very large PRs.
-* **Push Event Patch Content**: Push webhooks process filenames without fetching full commit diffs.
-* **Lack of Filtering**: Generated lockfiles and binary files are not excluded from reviews.
-
 ## Planned Improvements
 
-* Add exponential backoff retry handling for Gemini API requests.
-* Add pagination for GitHub PR file retrieval.
-* Add lockfile, binary, and minified file filtering.
-* Implement diff size limits and prompt chunking.
-* Add structured logging and comprehensive pytest test suite.
+* Add persistent background task queue (Redis + worker process) to prevent task loss on server restart.
+* Build frontend web interface for repository settings, analytics, and historical PR reviews.
+* Add multi-repository support and user authentication.

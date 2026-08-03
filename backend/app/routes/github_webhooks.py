@@ -4,6 +4,7 @@ from fastapi import APIRouter, Request, BackgroundTasks, HTTPException
 from app.security.github_signature import verify_github_signature
 from app.services.ai_review import review_code
 from app.services.github_service import get_pr_files, comment_on_pr
+from app.services.review_renderer import render_review_markdown
 
 logger = logging.getLogger("codesage.routes.webhooks")
 
@@ -82,9 +83,9 @@ def process_push(message: str, filenames: List[str]) -> None:
         for fname in filenames
     ]
 
-    review = review_code(message, files)
-    if review:
-        logger.info("Push AI review completed successfully.")
+    structured_review = review_code(message, files)
+    if structured_review:
+        logger.info(f"Push AI review completed successfully (Rating: {structured_review.overall_rating}/10).")
     else:
         logger.info("Push AI review skipped or yielded no result.")
 
@@ -97,7 +98,7 @@ def process_pr(
 ) -> None:
     """
     Background worker task for processing GitHub Pull Request events.
-    Fetches PR files, requests an AI code review, and posts the review comment to GitHub.
+    Fetches PR files, requests a structured AI code review, renders markdown, and posts comment to GitHub.
     """
     logger.info(f"Starting PR review process for {owner}/{repo}#{pr_number}...")
 
@@ -108,16 +109,18 @@ def process_pr(
 
     logger.info(f"Fetched {len(files)} file(s) for PR {owner}/{repo}#{pr_number}.")
 
-    review = review_code(pr_title, files)
-    if not review:
+    structured_review = review_code(pr_title, files)
+    if not structured_review:
         logger.warning(f"AI review generation yielded no content or encountered an error for PR #{pr_number}. Comment will NOT be posted.")
         return
+
+    markdown_comment = render_review_markdown(structured_review)
 
     try:
         status_code = comment_on_pr(
             repo_full_name=f"{owner}/{repo}",
             pr_number=pr_number,
-            comment=review
+            comment=markdown_comment
         )
         logger.info(f"Finished PR review workflow for {owner}/{repo}#{pr_number} (status={status_code}).")
     except Exception as e:

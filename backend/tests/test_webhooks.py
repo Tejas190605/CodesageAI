@@ -2,6 +2,7 @@ import hmac
 import hashlib
 import json
 import pytest
+from app.models.review import StructuredReview
 from app.routes.github_webhooks import process_pr
 
 
@@ -97,9 +98,9 @@ def test_webhook_ignored_pr_action(client, dummy_secret):
 
 
 def test_process_pr_success_workflow(mocker):
-    """Tests complete process_pr success path: get files -> review -> comment."""
+    """Tests complete process_pr success path: get files -> structured review -> markdown render -> comment."""
     mock_files = [{"filename": "app/main.py", "status": "modified", "patch": "+ code"}]
-    mock_review = "## Security Issues\nNone\n## Overall Rating (/10)\n10/10"
+    mock_review = StructuredReview(summary="LGTM", overall_rating=10, findings=[])
 
     mocker.patch("app.routes.github_webhooks.get_pr_files", return_value=mock_files)
     mocker.patch("app.routes.github_webhooks.review_code", return_value=mock_review)
@@ -107,11 +108,13 @@ def test_process_pr_success_workflow(mocker):
 
     process_pr("testowner", "testrepo", 15, "Add feature")
 
-    mock_comment.assert_called_once_with(
-        repo_full_name="testowner/testrepo",
-        pr_number=15,
-        comment=mock_review
-    )
+    mock_comment.assert_called_once()
+
+    # Verify that the comment posted to GitHub is Markdown and contains the summary and rating
+    posted_comment = mock_comment.call_args[1]["comment"]
+    assert "# CodeSage AI Review" in posted_comment
+    assert "**10/10**" in posted_comment
+    assert "LGTM" in posted_comment
 
 
 def test_process_pr_ai_failure_aborts_comment(mocker):

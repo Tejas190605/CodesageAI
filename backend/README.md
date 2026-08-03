@@ -10,7 +10,8 @@ AI-powered GitHub Pull Request code reviewer built with FastAPI, GitHub Webhooks
 * **GitHub PR File Pagination**: Fetches up to 1,000 modified files per PR across multiple pages (`per_page=100`).
 * **Non-Reviewable File Filtering**: Automatically excludes lockfiles, minified code, binary/image files, and vendor/build directories from AI prompts.
 * **Diff Truncation & Token Budgeting**: Caps file patch sizes (`12,000` chars/file) and overall diff size (`60,000` chars total) to prevent LLM context overflows.
-* **Gemini 2.5 Flash AI Integration**: Generates structured code reviews (Security, Bug Risks, Code Quality, Performance, Best Practices, Overall Rating).
+* **Structured AI Review Engine**: Generates strongly-typed Pydantic `StructuredReview` models directly from Gemini via `response_schema` JSON mode.
+* **Dual Markdown & JSON Pipeline**: Internally structures reviews into typed findings (`security`, `bug_risk`, `code_quality`, `performance`, `best_practice`) and renders clean GitHub Markdown comments.
 * **Transient Error Retry Policy**: Bounded exponential backoff retries via `tenacity` for transient Gemini API errors (429/503) and GitHub REST API drops.
 * **Automated PR Commenting**: Posts generated AI reviews directly to the GitHub PR discussion thread.
 * **Health Monitoring Endpoint**: Includes `GET /health` for service health checks.
@@ -18,10 +19,19 @@ AI-powered GitHub Pull Request code reviewer built with FastAPI, GitHub Webhooks
 ## Architecture
 
 ```
-GitHub Webhook  -->  FastAPI Endpoint (/webhook)  -->  Signature Verification
-                                                            |
-                                                            v (Background Task)
-GitHub PR Comments  <--  Gemini 2.5 Flash Review  <--  Fetch PR Patch Diffs (GitHub REST API)
+GitHub PR Webhook
+       ↓
+Signature Verification (HMAC-SHA256)
+       ↓
+Fetch / Filter / Truncate Diff (GitHub REST API)
+       ↓
+Gemini 2.5 Flash (Structured Output JSON Mode via response_schema)
+       ↓
+StructuredReview (Pydantic Model)
+       ├── Future REST API / Frontend Consumption
+       └── Markdown Renderer (render_review_markdown)
+                ↓
+           GitHub PR Comment Thread
 ```
 
 ## Project Structure
@@ -31,13 +41,16 @@ backend/
 ├── app/
 │   ├── main.py                 # FastAPI application entrypoint & health routes
 │   ├── config.py               # Centralized Pydantic settings
+│   ├── models/
+│   │   └── review.py           # StructuredReview & ReviewFinding Pydantic models
 │   ├── routes/
 │   │   └── github_webhooks.py  # Webhook route handler & background processor
 │   ├── security/
 │   │   └── github_signature.py # HMAC SHA-256 signature verification
 │   ├── services/
-│   │   ├── ai_review.py        # Gemini AI prompt formatting & API integration
-│   │   └── github_service.py   # GitHub REST API client (paginated files & comments)
+│   │   ├── ai_review.py        # Gemini AI structured review engine
+│   │   ├── github_service.py   # GitHub REST API client (paginated files & comments)
+│   │   └── review_renderer.py  # Markdown renderer converting StructuredReview -> Markdown
 │   └── utils/
 │       └── diff_utils.py       # File filtering & diff truncation logic
 ├── tests/                      # Pytest automated test suite
@@ -99,7 +112,7 @@ The server will be available at `http://localhost:8000`.
 
 ## Testing
 
-The backend includes a comprehensive automated pytest test suite covering API routes, signature verification, REST API pagination and retries, file filtering, diff truncation, and prompt safety.
+The backend includes a comprehensive automated pytest test suite covering API routes, signature verification, REST API pagination and retries, file filtering, diff truncation, Pydantic models, markdown renderer, and prompt safety.
 
 To run the tests:
 

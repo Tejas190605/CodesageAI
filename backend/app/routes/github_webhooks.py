@@ -5,6 +5,7 @@ from app.security.github_signature import verify_github_signature
 from app.services.ai_review import review_code
 from app.services.github_service import get_pr_files, comment_on_pr
 from app.services.review_renderer import render_review_markdown
+from app.services.delivery_tracker import is_duplicate_delivery, record_delivery
 
 logger = logging.getLogger("codesage.routes.webhooks")
 
@@ -15,16 +16,27 @@ router = APIRouter()
 async def github_webhook(
     request: Request,
     background_tasks: BackgroundTasks
-) -> Dict[str, str]:
+) -> Dict[str, Any]:
     """
     FastAPI webhook endpoint for GitHub repository events.
-    Verifies payload authenticity and dispatches event handling to background tasks.
+    Verifies payload signature, checks delivery idempotency, and dispatches background worker tasks.
     """
     body = await request.body()
     signature = request.headers.get("X-Hub-Signature-256")
 
-    # Verify signature before parsing JSON or executing tasks
+    # 1. Verify cryptographic signature BEFORE parsing JSON or checking tracker
     verify_github_signature(signature, body)
+
+    # 2. Check X-GitHub-Delivery idempotency
+    delivery_id = request.headers.get("X-GitHub-Delivery")
+    if delivery_id:
+        if is_duplicate_delivery(delivery_id):
+            logger.info(f"Duplicate GitHub delivery '{delivery_id}' ignored.")
+            return {"status": "duplicate", "delivery_id": delivery_id}
+        record_delivery(delivery_id)
+        logger.info(f"Accepted GitHub delivery '{delivery_id}'")
+    else:
+        logger.warning("Webhook request missing X-GitHub-Delivery header. Processing normally.")
 
     payload = await request.json()
     event = request.headers.get("X-GitHub-Event")

@@ -8,6 +8,7 @@ from tenacity import (
     retry_if_exception,
 )
 from app.config import settings
+from app.utils.circuit_breaker import github_api_circuit_breaker
 
 logger = logging.getLogger("codesage.github_service")
 
@@ -46,20 +47,22 @@ def _get_headers() -> Dict[str, str]:
     before_sleep=lambda retry_state: logger.warning(
         f"Retrying GitHub API request (attempt {retry_state.attempt_number})..."
     ),
-    reraise=True
 )
 def _fetch_pr_files_page(owner: str, repo: str, pr_number: int, page: int, per_page: int = 100) -> List[Dict[str, Any]]:
     url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/files"
     params = {"page": page, "per_page": per_page}
 
-    response = requests.get(
-        url,
-        headers=_get_headers(),
-        params=params,
-        timeout=settings.GITHUB_API_TIMEOUT
-    )
-    response.raise_for_status()
-    return response.json()
+    def _make_req():
+        resp = requests.get(
+            url,
+            headers=_get_headers(),
+            params=params,
+            timeout=settings.GITHUB_API_TIMEOUT
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    return github_api_circuit_breaker.call(_make_req)
 
 
 def get_pr_files(owner: str, repo: str, pr_number: int, max_pages: int = 10) -> List[Dict[str, str]]:

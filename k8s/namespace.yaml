@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: codesage-production
+  labels:
+    name: codesage-production
+    environment: production

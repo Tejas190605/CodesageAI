@@ -2,11 +2,20 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, GitBranch, Settings, Bot, ShieldCheck } from 'lucide-react';
+import { LayoutDashboard, GitBranch, Settings, Bot, ShieldCheck, Activity, AppWindow, User, LogIn, Cpu, Search, Sliders, BarChart3, FileText } from 'lucide-react';
 
 const NAV_ITEMS = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   { name: 'Repositories', href: '/repos', icon: GitBranch },
+  { name: 'Code Search', href: '/search', icon: Search },
+  { name: 'Policies', href: '/policies', icon: Sliders },
+  { name: 'Analytics', href: '/analytics', icon: BarChart3 },
+  { name: 'Audit Log', href: '/audit-log', icon: FileText },
+  { name: 'Job Queue', href: '/jobs', icon: Activity },
+  { name: 'AI Platform', href: '/ai-settings', icon: Cpu },
+  { name: 'Installations', href: '/installations', icon: AppWindow },
+  { name: 'Profile', href: '/profile', icon: User },
+  { name: 'Sign In', href: '/login', icon: LogIn },
   { name: 'Settings', href: '/settings', icon: Settings },
 ];
 
@@ -58,10 +67,12 @@ export function Sidebar() {
       <div className="p-4 border-t border-zinc-800/60 text-xs text-zinc-500 space-y-2">
         <div className="flex items-center space-x-2 text-zinc-400">
           <ShieldCheck className="h-4 w-4 text-emerald-500" />
-          <span>Webhook Secured</span>
+          <span>GitHub OAuth & App OAuth</span>
         </div>
         <p className="text-[10px]">Gemini 2.5 Flash Engine</p>
       </div>
     </aside>
   );
 }
+
+export default Sidebar;

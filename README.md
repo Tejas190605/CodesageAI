@@ -1,55 +1,99 @@
-# CodeSage AI — AI Developer Assistant & Automated GitHub Code Review Platform
+# CodeSage AI — Enterprise AI-Powered Code Review & Repository Intelligence Platform
 
-CodeSage AI is an intelligent automated code review engine and developer dashboard. It seamlessly connects to GitHub repositories via Webhooks, fetches Pull Request diffs, performs structured multi-dimensional code analysis using Google Gemini AI, posts formatted reviews directly to PR discussion threads, and presents a modern Next.js developer dashboard for monitoring repository health and code quality metrics.
+> **CodeSage AI** is a production-grade, multi-tenant developer assistant platform that automates GitHub Pull Request code reviews using Google Gemini 2.5 Flash and multi-LLM orchestration, performs semantic codebase RAG retrieval, enforces custom security policies, tracks audit events, and delivers engineering analytics via a modern Next.js 16 dashboard.
 
 ---
 
-## Architecture Overview
+## Overview
 
-```text
-  GitHub Repository (Pull Request / Push Event)
-         │
-         ▼ (HMAC-SHA256 Signed Webhook)
-  FastAPI Backend (http://127.0.0.1:8000)
-    ├── HMAC Signature Verification (app/security/github_signature.py)
-    ├── Webhook Idempotency Delivery Tracker (app/services/delivery_tracker.py)
-    ├── GitHub File Fetching & Diff Truncation (app/services/github_service.py)
-    ├── Gemini 2.5 Structured Review Engine (app/services/ai_review.py)
-    └── Markdown Renderer & PR Commenter (app/services/review_renderer.py)
-         │
-         ▼ (REST APIs)
-  Next.js 16 Developer Dashboard (http://localhost:3000)
-    ├── Dashboard Overview (/)
-    ├── Monitored Repositories (/repos)
-    ├── Repository Detail & PR Filter (/repos/[owner]/[repo])
-    ├── AI Review & Findings Detail (/repos/[owner]/[repo]/pulls/[number])
-    └── Integration & Webhook Settings (/settings)
+Modern software teams spend hundreds of hours reviewing Pull Requests, looking for security flaws, credential leaks, performance regressions, and style violations. **CodeSage AI** automates PR code reviews by combining:
+1. **GitHub App & Webhook Event Processing**: Immediate, secure delivery handling with HMAC SHA-256 verification and LRU idempotency deduplication.
+2. **Semantic Codebase RAG Intelligence**: Language-aware AST/regex chunking and Reciprocal Rank Fusion (RRF) hybrid code search to give the AI engine deep cross-file repository context.
+3. **Security Policy Engine**: Deterministic rules detecting hardcoded secrets, leftover debug statements, dependency manifest changes, and missing test files before LLM invocation.
+4. **Multi-LLM Provider Registry**: Flexible model dispatching supporting Google Gemini, OpenAI, and Anthropic with automatic failover and token cost tracking.
+5. **Engineering Analytics & Audit Trail**: Real-time review metrics, finding severity breakdowns, AI token expenses, job queue health, and sanitized immutable audit logs.
+
+---
+
+## Architecture Diagram
+
+```mermaid
+flowchart TD
+    subgraph GitHub ["GitHub Infrastructure"]
+        GHApp["GitHub App / Webhook"]
+        GHPR["Pull Request Thread"]
+    end
+
+    subgraph Platform ["CodeSage AI Monorepo Engine"]
+        FastAPI["FastAPI Backend (app/main.py)"]
+        DeliveryTracker["Delivery Tracker & HMAC Security"]
+        Postgres[(PostgreSQL 15 + pgvector)]
+        RedisQueue[("Redis Queue / ARQ Worker")]
+        Worker["Async Worker Loop (app/worker.py)"]
+        Chunker["AST/Regex Code Chunker"]
+        RAGEngine["Hybrid RRF Semantic Search"]
+        PolicyEngine["Security Policy Engine"]
+        LLMRegistry["Multi-LLM Provider Registry"]
+        Publisher["GitHub Review Publisher"]
+    end
+
+    subgraph Frontend ["Next.js 16 Web Dashboard"]
+        NextJS["Next.js App Router (http://localhost:3000)"]
+    end
+
+    GHApp -->|HMAC Webhook| FastAPI
+    FastAPI --> DeliveryTracker
+    DeliveryTracker -->|Enqueue ReviewJob| RedisQueue
+    RedisQueue --> Worker
+    Worker -->|Fetch PR Files & Diff| GHApp
+    Worker -->|Query Code Chunks| RAGEngine
+    RAGEngine -->|Semantic Context| Chunker
+    Chunker <--> Postgres
+    Worker --> PolicyEngine
+    PolicyEngine -->|Deterministic Rules| LLMRegistry
+    LLMRegistry -->|Structured AI Review| Publisher
+    Publisher -->|Post Markdown & Inline Comments| GHPR
+    Worker -->|Persist Review & Audit Event| Postgres
+    NextJS <-->|REST APIs| FastAPI
 ```
 
 ---
 
-## Core Features
+## Key Features
 
-* **Automated Webhook Code Reviews**: Instant analysis on PR events (`opened`, `synchronize`, `reopened`).
-* **Structured AI Engine**: Powered by Gemini 2.5 Flash with Pydantic JSON schema enforcement (`StructuredReview`), scoring overall code quality ($1-10$) across 6 distinct dimensions:
-  1. Summary & Architecture Overview
-  2. Security Vulnerabilities (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`, `INFO`)
-  3. Bug Risks & Logic Flaws
-  4. Code Quality & Readability
-  5. Performance Concerns
-  6. Best Practice & Style Suggestions
-* **Webhook Delivery Idempotency**: LRU `X-GitHub-Delivery` tracker prevents duplicate AI runs on redelivered webhooks.
-* **Resilient Retry Policy**: `tenacity` exponential backoff retries for transient Gemini / GitHub API network errors.
-* **Diff Truncation Budgeting**: Per-file and global token budgeting prevents payload context window overflow.
-* **Modern Developer Dashboard**: Next.js 16 App Router UI with real-time backend connection status, dark mode tokens, interactive PR filters, and safe Markdown rendering.
+- **Automated AI PR Reviews**: Actionable PR reviews with overall quality scores ($1-10$), line-level suggestions, and severity decision logic (`APPROVE`, `COMMENT`, `REQUEST_CHANGES`).
+- **Repository Intelligence & RAG**: Codebase indexing using AST/regex chunkers across Python, JS/TS/TSX, Java, and Go, coupled with pgvector/hybrid RRF search to feed relevant context into review prompts.
+- **Security Policy Engine**: `.codesage.yml` safe parsing with precedence hierarchy (Repo Config $\rightarrow$ Org Overrides $\rightarrow$ System Defaults) and deterministic rules for secrets, debug code, dependencies, and test coverage.
+- **Secret Redaction & Audit Safety**: Automated SHA-256 fingerprint finding deduplication and recursive scrubbing of sensitive keys (`token`, `secret`, `api_key`, `password`, `authorization`).
+- **Multi-LLM Provider Registry**: Abstracted LLM driver interface with runtime provider selection, fallback handling, prompt versioning, and token cost tracking.
+- **Enterprise Engineering Analytics**: Real-time overview metrics, finding severities, review velocity, AI costs/tokens, and job queue success rates.
+- **Production Infrastructure**: Fully containerized (`Docker`, `docker-compose.prod.yml`), Kubernetes deployment manifests (`k8s/`), and automated GitHub Actions CI/CD workflows.
+
+---
+
+## Application Modules & Screenshots
+
+| Module | Route | Description |
+| :--- | :--- | :--- |
+| **Dashboard** | `/` | Executive overview of monitored repositories, active pull requests, and review metrics. |
+| **Repositories** | `/repos` | Monitored repository list, indexing status, and pull request activity streams. |
+| **Code Search** | `/search` | Semantic hybrid RRF codebase search with file citations and code snippet previews. |
+| **Policies** | `/policies` | Interactive policy management for custom review rules and severity thresholds. |
+| **Analytics** | `/analytics` | Engineering metrics for review turnaround, finding severities, AI token costs, and job queue health. |
+| **Audit Log** | `/audit-log` | Immutable, sanitized security trail for user authentication, indexing, and review operations. |
+| **Job Queue** | `/jobs` | Worker background job queue monitoring, retry counts, and worker health status. |
+| **AI Platform** | `/ai-settings` | Multi-LLM provider registry status, active prompt templates, and evaluation runs. |
+| **Installations** | `/installations` | GitHub App organization installations, repository permissions, and account binding. |
+| **Profile** | `/profile` | Authenticated user profile, GitHub OAuth session status, and organization memberships. |
 
 ---
 
 ## Technology Stack
 
-* **Backend**: Python 3.14+, FastAPI, Uvicorn, Pydantic v2, `google-genai` SDK, `httpx`, `tenacity`, `pytest`
-* **Frontend**: Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS, `lucide-react`
-* **Integrations**: GitHub REST APIs, GitHub Webhooks (HMAC-SHA256), Google Gemini 2.5 Flash
+- **Backend**: Python 3.14+, FastAPI, Uvicorn, Gunicorn, SQLAlchemy 2.0, Alembic, PostgreSQL + pgvector, Redis + ARQ, PyJWT, PyYAML, `google-genai` SDK, `pytest`
+- **Frontend**: Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS, `lucide-react`
+- **Infrastructure**: Docker, Docker Compose, Kubernetes, GitHub Actions CI/CD, Prometheus Metrics
+- **Integrations**: GitHub REST APIs, GitHub App OAuth 2.0, GitHub Webhooks (HMAC SHA-256), Google Gemini 2.5 Flash
 
 ---
 
@@ -58,72 +102,56 @@ CodeSage AI is an intelligent automated code review engine and developer dashboa
 ```text
 codesage-ai/
 ├── backend/                                # FastAPI Backend Engine
+│   ├── alembic/                            # Alembic Database Migrations (001 -> 007)
 │   ├── app/
-│   │   ├── main.py                         # FastAPI Application Entrypoint & CORS Config
+│   │   ├── main.py                         # FastAPI App Entrypoint & Router Registry
 │   │   ├── config.py                       # Pydantic Settings & Environment Parsing
-│   │   ├── models/                         # Review Schemas & Pydantic Data Models
-│   │   ├── routes/                         # Webhook & REST API Routes
-│   │   ├── security/                       # HMAC Signature Verification
-│   │   ├── services/                       # Gemini AI, GitHub Service, Delivery Tracker
-│   │   └── utils/                          # Diff Filtering & Budgeting Utilities
-│   ├── tests/                              # 74 Pytest Unit & Integration Tests
-│   ├── requirements.txt                    # Production Dependencies
-│   └── .env.example                        # Backend Environment Template
+│   │   ├── database.py                     # SQLAlchemy 2.0 Session & Engine Setup
+│   │   ├── models/                         # Database ORM & Pydantic Review Models
+│   │   ├── routes/                         # REST API Routers (Auth, Repos, Search, Policies, Analytics, Audit)
+│   │   ├── security/                       # HMAC Webhook Verification & JWT Auth
+│   │   ├── services/                       # RAG, Policy Engine, LLM Registry, Audit, Analytics, Worker
+│   │   └── worker.py                       # Async Worker Review Pipeline Execution
+│   ├── tests/                              # 142 Pytest Unit & Integration Tests
+│   ├── Dockerfile                          # Backend Container Image Definition
+│   └── requirements.txt                    # Production Python Dependencies
 ├── frontend/                               # Next.js 16 Developer Dashboard
 │   ├── src/
-│   │   ├── app/                            # App Router Routes (/, /repos, /settings)
-│   │   ├── components/                     # Layout & UI Components
-│   │   └── lib/                            # API Client & TypeScript Types
-│   ├── package.json                        # Frontend Dependencies
-│   ├── .env.local.example                  # Frontend Environment Template
-│   └── README.md                           # Frontend Component Documentation
-├── .github/workflows/                      # GitHub Actions CI Workflows
-│   ├── backend-tests.yml                   # Automated Backend Pytest CI Workflow
-│   └── frontend-tests.yml                  # Automated Frontend Next.js Lint & Build CI
-└── README.md                               # Root Monorepo Documentation
+│   │   ├── app/                            # 15 App Router Routes (/, /repos, /search, /policies, /analytics, /audit-log)
+│   │   ├── components/                     # Layout, Sidebar, & UI Components
+│   │   └── lib/                            # API Client Library & TypeScript Interfaces
+│   └── Dockerfile                          # Frontend Container Image Definition
+├── k8s/                                    # Production Kubernetes Deployment Manifests
+├── docs/                                   # Architectural & Deployment Documentation
+│   ├── ARCHITECTURE.md                     # Deep Dive System Architecture
+│   ├── LOCAL_DEVELOPMENT.md                # PowerShell & Docker Development Guide
+│   ├── DEPLOYMENT_GUIDE.md                 # Production Docker & K8s Deployment Guide
+│   ├── API.md                              # REST API Reference Documentation
+│   ├── RELEASE_NOTES_v1.0.md               # CodeSage AI v1.0 Feature Release Summary
+│   └── RELEASE_CHECKLIST.md                # Pre-Flight Deployment Checklist
+├── .github/workflows/                      # GitHub Actions Automated CI/CD Pipelines
+├── docker-compose.yml                      # Development Multi-Container Compose Setup
+├── docker-compose.prod.yml                 # Production Stack Definition
+├── SECURITY.md                             # Vulnerability Reporting & Security Policies
+└── README.md                               # Project Overview & Quickstart Guide
 ```
 
 ---
 
-## Environment Variables
+## Quickstart & Local Development
 
-### Backend Configuration (`backend/.env`)
+### 1. Backend Setup (Windows PowerShell)
 
-```env
-GEMINI_API_KEY=your_gemini_api_key_here
-GITHUB_TOKEN=your_github_personal_access_token_here
-GITHUB_WEBHOOK_SECRET=your_github_webhook_secret_here
-CODESAGE_REPOSITORIES=Tejas190605/codexproj
-CORS_ORIGINS=http://localhost:3000
-```
-
-> **Security Note**: Never commit `backend/.env` or expose API tokens in source repositories.
-
-### Frontend Configuration (`frontend/.env.local`)
-
-```env
-NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000
-```
-
----
-
-## Local Development & Setup
-
-### 1. Backend Setup
-
-```bash
+```powershell
 cd backend
 python -m venv venv
-# On Windows PowerShell:
 .\venv\Scripts\Activate.ps1
-# On Linux/macOS:
-source venv/bin/activate
-
-pip install -r requirements-dev.txt
+pip install -r requirements.txt
+python -m alembic upgrade head
 python -m uvicorn app.main:app --reload
 ```
 
-Backend will start at `http://127.0.0.1:8000`.
+Backend REST APIs will start at `http://127.0.0.1:8000`.
 
 ### 2. Frontend Setup
 
@@ -133,21 +161,48 @@ npm install
 npm run dev
 ```
 
-Frontend will start at `http://localhost:3000`.
+Frontend Dashboard will start at `http://localhost:3000`.
 
 ---
 
-## Running Automated Tests
+## Environment Variables
 
-### Backend Test Suite (74 Tests)
+Copy template environment files:
 
 ```bash
-cd backend
-python -m pytest -v
-python -m compileall app
+cp .env.example .env
+cp backend/.env.example backend/.env
+cp frontend/.env.example frontend/.env.local
 ```
 
-### Frontend Quality & Build Verification
+### Key Environment Variables Matrix
+
+| Variable | Scope | Description |
+| :--- | :--- | :--- |
+| `DATABASE_URL` | Backend | PostgreSQL connection string (`postgresql://user:pass@host:5432/db`) |
+| `REDIS_URL` | Backend | Redis queue connection string (`redis://localhost:6379/0`) |
+| `GEMINI_API_KEY` | Backend | Google Gemini AI API key |
+| `GITHUB_WEBHOOK_SECRET` | Backend | HMAC SHA-256 Webhook signature secret key |
+| `GITHUB_APP_ID` | Backend | GitHub App ID for authentication |
+| `GITHUB_APP_PRIVATE_KEY` | Backend | GitHub App RSA Private Key |
+| `GITHUB_CLIENT_ID` | Backend | GitHub OAuth Client ID |
+| `GITHUB_CLIENT_SECRET` | Backend | GitHub OAuth Client Secret |
+| `JWT_SECRET_KEY` | Backend | Secret key for JWT session tokens |
+| `NEXT_PUBLIC_API_BASE_URL` | Frontend | Backend API endpoint URL (`http://127.0.0.1:8000`) |
+
+---
+
+## Automated Test Verification
+
+### Backend Test Suite (142 Tests)
+
+```powershell
+cd backend
+.\venv\Scripts\python.exe -m pytest -q
+.\venv\Scripts\python.exe -m compileall app
+```
+
+### Frontend Quality & Production Build
 
 ```bash
 cd frontend
@@ -157,48 +212,24 @@ npm run build
 
 ---
 
-## Development Workflow
+## Deployment & Production
 
-To contribute or add new features to CodeSage AI:
+Deploy CodeSage AI using Docker Compose or Kubernetes:
 
-1. Start from an up-to-date `main` branch: `git checkout main && git pull origin main`
-2. Create a focused feature branch: `git checkout -b feature/my-feature`
-3. Implement changes and verify locally with automated tests (`pytest`, `npm run lint`, `npm run build`).
-4. Commit focused code changes with clear commit messages.
-5. Push your feature branch normally: `git push -u origin feature/my-feature`
-6. Open a Pull Request targeting `main`. Both Backend CI and Frontend CI must pass before merging.
+```bash
+# Production Docker Compose Stack
+docker compose -f docker-compose.prod.yml up -d --build
 
----
+# Kubernetes Deployments
+kubectl apply -f k8s/
+```
 
-## GitHub Webhook Integration Setup
-
-1. Start an ngrok tunnel pointing to port 8000:
-   ```bash
-   ngrok http 8000
-   ```
-2. Navigate to your GitHub Repository $\rightarrow$ **Settings** $\rightarrow$ **Webhooks** $\rightarrow$ **Add webhook**.
-3. **Payload URL**: `https://<your-ngrok-subdomain>.ngrok-free.app/webhook`
-4. **Content type**: `application/json`
-5. **Secret**: Enter the exact secret string defined in `GITHUB_WEBHOOK_SECRET`.
-6. **Events**: Select **Pushes** and **Pull requests**.
-7. Save the webhook. CodeSage AI will now automatically analyze and review PRs on creation or push updates!
+Refer to [`docs/DEPLOYMENT_GUIDE.md`](file:///c:/Users/tejas/codesage-ai/docs/DEPLOYMENT_GUIDE.md) for detailed environment configuration, TLS setup, and database migration steps.
 
 ---
 
-## Security Guidelines
+## Current Status
 
-* Secret keys (`GEMINI_API_KEY`, `GITHUB_TOKEN`, `GITHUB_WEBHOOK_SECRET`) are restricted strictly to the FastAPI backend environment.
-* The Next.js frontend communicates exclusively with FastAPI endpoints. Zero direct browser requests are made to external GitHub APIs.
-* Webhook requests are cryptographically verified using `HMAC-SHA256` timing-safe comparisons (`hmac.compare_digest`).
+**v1.0 — Feature Complete & Verified Green**.
 
----
-
-## Phase Roadmap
-
-* [x] **Phase 1**: Backend Repository Cleanup & Normalization
-* [x] **Phase 2**: Backend Hardening, Retries, Diff Limits, Webhook Security, & Pytest Suite
-* [x] **Phase 3A-3E**: Structured Gemini AI Review Engine, Dashboard REST APIs, & Next.js 16 Frontend MVP
-* [x] **Phase 3F**: Webhook Idempotency Tracker, End-to-End Verification, & MVP Local Release Checkpoint
-* [x] **Phase 3G-3J**: Unified Monorepo Migration, Controlled Main Branch Alignment, & Dual Monorepo CI
-* [x] **Phase 3K**: Post-Migration Stabilization & Standard Development Workflow Validation
-* [ ] **Phase 4**: PostgreSQL Persistence, Redis Worker Queues, GitHub App OAuth Auth, & Production Deployment
+All 142 backend tests and 15 frontend App Router routes are fully tested, integrated, and ready for production deployment.

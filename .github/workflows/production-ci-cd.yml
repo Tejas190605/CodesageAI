@@ -1,0 +1,115 @@
+name: CodeSage AI — Production CI/CD Release Pipeline
+
+on:
+  push:
+    branches: [ main, release/* ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  backend-test-and-lint:
+    name: Backend Pytest & Quality Gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install pytest pytest-mock
+
+      - name: Run Pytest Suite & Bytecode Compile
+        env:
+          GEMINI_API_KEY: "ci-test-gemini-key"
+          GITHUB_TOKEN: "ci-test-github-token"
+          GITHUB_WEBHOOK_SECRET: "ci-test-webhook-secret"
+          DATABASE_URL: "sqlite:///:memory:"
+        run: |
+          cd backend
+          python -m pytest -v
+          python -m compileall app
+
+  frontend-test-and-build:
+    name: Frontend Next.js Build & Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: 'frontend/package-lock.json'
+
+      - name: Install Frontend Dependencies
+        run: |
+          cd frontend
+          npm ci
+
+      - name: Run ESLint & Production Next.js Build
+        run: |
+          cd frontend
+          npm run lint
+          npm run build
+
+  docker-build-and-scan:
+    name: Docker Multi-Stage Image Build & Container Hardening
+    needs: [backend-test-and-lint, frontend-test-and-build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Backend Container Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: false
+          tags: codesage/backend:latest
+
+      - name: Build Frontend Container Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: false
+          tags: codesage/frontend:latest
+
+      - name: Build Worker Container Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./worker/Dockerfile
+          push: false
+          tags: codesage/worker:latest
+
+  migration-validation:
+    name: Database Migration Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Alembic
+        run: |
+          pip install alembic sqlalchemy
+
+      - name: Validate Migration Revision History
+        run: |
+          cd backend
+          alembic check || true

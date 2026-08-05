@@ -14,6 +14,26 @@ class Settings(BaseSettings):
     CODESAGE_REPOSITORIES: str = ""
     CORS_ORIGINS: str = "http://localhost:3000"
 
+    # Database Persistence Configuration
+    DATABASE_URL: str = "sqlite:///./codesage.db"
+
+    # Redis Queue & Worker Configuration
+    REDIS_URL: str = "redis://localhost:6379/0"
+    WORKER_CONCURRENCY: int = 5
+    MAX_RETRIES: int = 3
+    JOB_TIMEOUT: int = 300
+
+    # GitHub App & OAuth 2.0 Integration
+    GITHUB_APP_ID: str = ""
+    GITHUB_APP_PRIVATE_KEY: str = ""
+    GITHUB_CLIENT_ID: str = ""
+    GITHUB_CLIENT_SECRET: str = ""
+
+    # Multi-Tenant Auth & JWT Configuration
+    JWT_SECRET_KEY: str = "codesage-ai-super-secret-jwt-key-2026-secure"
+    JWT_ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 10080  # 7 Days
+
     # Configurable Operational Parameters with Defaults
     GEMINI_MODEL: str = "gemini-2.5-flash"
     GITHUB_API_TIMEOUT: int = 30

@@ -1,7 +1,22 @@
 import logging
 from typing import List, Optional
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
+from sqlalchemy.orm import Session
 from app.config import settings
+from app.database import get_db
+from app.models.db import Repository as DBRepository, PullRequest as DBPullRequest, Review as DBReview
+from app.db_repositories.repository_repo import (
+    get_repository_by_owner_repo,
+    list_all_repositories,
+)
+from app.db_repositories.pr_repo import (
+    get_pull_request_by_number,
+    list_pull_requests_for_repo,
+)
+from app.db_repositories.review_repo import (
+    get_latest_review_for_pr,
+    list_reviews_for_pr,
+)
 from app.models.github import (
     RepositorySummary,
     PullRequestSummary,
@@ -52,14 +67,31 @@ def _map_github_pr_summary(pr_data: dict) -> PullRequestSummary:
     )
 
 
+def _map_db_pr_summary(pr: DBPullRequest) -> PullRequestSummary:
+    """Helper converting a database DBPullRequest model into a PullRequestSummary object."""
+    return PullRequestSummary(
+        number=pr.number,
+        title=pr.title,
+        state=pr.state,
+        draft=False,
+        author=pr.author or "unknown",
+        html_url=pr.html_url or "",
+        created_at=pr.created_at.isoformat() if pr.created_at else None,
+        updated_at=pr.updated_at.isoformat() if pr.updated_at else None,
+        head_branch="",
+        base_branch=""
+    )
+
+
 # ======================================================
 # DASHBOARD ENDPOINT
 # ======================================================
 
 @router.get("/dashboard", response_model=DashboardSummary)
-def get_dashboard_summary() -> DashboardSummary:
+def get_dashboard_summary(db: Session = Depends(get_db)) -> DashboardSummary:
     """
     Aggregates code health metrics and recent PR reviews across monitored repositories.
+    Queries database records first; falls back to GitHub live APIs if database is unpopulated.
     """
     monitored = settings.monitored_repositories
     if not monitored:
@@ -71,21 +103,42 @@ def get_dashboard_summary() -> DashboardSummary:
             average_score=None
         )
 
+    # 1. Attempt database aggregation first
+    try:
+        db_repos = list_all_repositories(db)
+        if db_repos:
+            open_prs_count = db.query(DBPullRequest).filter(DBPullRequest.state == "open").count()
+            reviewed_prs_count = db.query(DBPullRequest).join(DBReview).distinct().count()
+            
+            recent_db_prs = db.query(DBPullRequest).order_by(DBPullRequest.updated_at.desc()).limit(10).all()
+            recent_summaries = [_map_db_pr_summary(pr) for pr in recent_db_prs]
+
+            reviews = db.query(DBReview).filter(DBReview.overall_rating.isnot(None)).all()
+            ratings = [r.overall_rating for r in reviews if r.overall_rating is not None]
+            avg_score = round(sum(ratings) / len(ratings), 1) if ratings else None
+
+            return DashboardSummary(
+                repositories_count=len(db_repos),
+                open_pull_requests=open_prs_count,
+                reviewed_pull_requests=reviewed_prs_count,
+                recent_pull_requests=recent_summaries,
+                average_score=avg_score
+            )
+    except Exception as e:
+        logger.warning(f"Database query error during get_dashboard_summary fallback to GitHub API: {e}")
+
+    # 2. Live GitHub API fallback if DB is empty or fails
     open_prs_count = 0
     reviewed_prs_count = 0
     recent_prs: List[PullRequestSummary] = []
     scores: List[int] = []
 
     for owner, repo in monitored:
-        # Fetch open PRs
         open_prs_data = list_pull_requests(owner, repo, state="open", max_pages=2)
         open_prs_count += len(open_prs_data)
 
-        # Collect recent PR summaries
         for pr_raw in open_prs_data[:5]:
             recent_prs.append(_map_github_pr_summary(pr_raw))
-
-            # Inspect comments for review status and score
             pr_num = pr_raw.get("number")
             if pr_num:
                 comments = list_issue_comments(owner, repo, pr_num, max_pages=1)
@@ -113,13 +166,39 @@ def get_dashboard_summary() -> DashboardSummary:
 # ======================================================
 
 @router.get("/repositories", response_model=List[RepositorySummary])
-def list_monitored_repositories() -> List[RepositorySummary]:
+def list_monitored_repositories(db: Session = Depends(get_db)) -> List[RepositorySummary]:
     """
-    Returns configured monitored repositories with live GitHub metadata.
+    Returns monitored repositories, querying database first with live GitHub API fallback.
     """
     monitored = settings.monitored_repositories
     results: List[RepositorySummary] = []
 
+    try:
+        db_repos = list_all_repositories(db)
+        if db_repos:
+            for repo in db_repos:
+                open_count = db.query(DBPullRequest).filter(
+                    DBPullRequest.repository_id == repo.id,
+                    DBPullRequest.state == "open"
+                ).count()
+                results.append(
+                    RepositorySummary(
+                        owner=repo.owner,
+                        name=repo.name,
+                        full_name=repo.full_name,
+                        description=repo.description,
+                        private=repo.private,
+                        default_branch=repo.default_branch or "main",
+                        html_url=f"https://github.com/{repo.full_name}",
+                        open_pull_requests=open_count,
+                        updated_at=repo.updated_at.isoformat() if repo.updated_at else None
+                    )
+                )
+            return results
+    except Exception as e:
+        logger.warning(f"Database query error during list_monitored_repositories fallback to GitHub API: {e}")
+
+    # Live fallback if DB empty
     for owner, repo in monitored:
         repo_data = get_repository(owner, repo)
         if not repo_data:
@@ -146,13 +225,40 @@ def list_monitored_repositories() -> List[RepositorySummary]:
 
 
 @router.get("/repositories/{owner}/{repo}")
-def get_repository_detail(owner: str, repo: str):
+def get_repository_detail(
+    owner: str,
+    repo: str,
+    db: Session = Depends(get_db)
+):
     """
-    Returns repository metadata and open pull request list for a configured repo.
+    Returns repository metadata and pull request summaries for a configured repo.
     """
     if not _is_repo_configured(owner, repo):
         raise HTTPException(status_code=404, detail=f"Repository '{owner}/{repo}' is not configured in CodeSage.")
 
+    try:
+        db_repo = get_repository_by_owner_repo(db, owner, repo)
+        if db_repo:
+            db_prs = list_pull_requests_for_repo(db, db_repo.id, state="all")
+            prs_summaries = [_map_db_pr_summary(pr) for pr in db_prs]
+            return {
+                "repository": RepositorySummary(
+                    owner=db_repo.owner,
+                    name=db_repo.name,
+                    full_name=db_repo.full_name,
+                    description=db_repo.description,
+                    private=db_repo.private,
+                    default_branch=db_repo.default_branch or "main",
+                    html_url=f"https://github.com/{db_repo.full_name}",
+                    open_pull_requests=sum(1 for p in prs_summaries if p.state == "open"),
+                    updated_at=db_repo.updated_at.isoformat() if db_repo.updated_at else None
+                ),
+                "pull_requests": prs_summaries
+            }
+    except Exception as e:
+        logger.warning(f"Database query error for get_repository_detail({owner}/{repo}): {e}")
+
+    # GitHub API fallback
     repo_data = get_repository(owner, repo)
     if not repo_data:
         raise HTTPException(status_code=404, detail=f"Repository '{owner}/{repo}' not found on GitHub.")
@@ -180,13 +286,23 @@ def get_repository_detail(owner: str, repo: str):
 def get_repository_pulls(
     owner: str,
     repo: str,
-    state: str = Query("all", pattern="^(open|closed|all)$")
+    state: str = Query("all", pattern="^(open|closed|all)$"),
+    db: Session = Depends(get_db)
 ) -> List[PullRequestSummary]:
     """
-    Lists pull requests for a configured repository filtered by state ('open', 'closed', 'all').
+    Lists pull requests for a configured repository filtered by state.
     """
     if not _is_repo_configured(owner, repo):
         raise HTTPException(status_code=404, detail=f"Repository '{owner}/{repo}' is not configured in CodeSage.")
+
+    try:
+        db_repo = get_repository_by_owner_repo(db, owner, repo)
+        if db_repo:
+            db_prs = list_pull_requests_for_repo(db, db_repo.id, state=state)
+            if db_prs:
+                return [_map_db_pr_summary(pr) for pr in db_prs]
+    except Exception as e:
+        logger.warning(f"Database query error for get_repository_pulls({owner}/{repo}): {e}")
 
     prs_data = list_pull_requests(owner, repo, state=state, max_pages=5)
     return [_map_github_pr_summary(pr) for pr in prs_data]
@@ -197,12 +313,35 @@ def get_repository_pulls(
 # ======================================================
 
 @router.get("/pulls/{owner}/{repo}/{number}", response_model=PullRequestDetail)
-def get_pull_request_detail(owner: str, repo: str, number: int) -> PullRequestDetail:
+def get_pull_request_detail(
+    owner: str,
+    repo: str,
+    number: int,
+    db: Session = Depends(get_db)
+) -> PullRequestDetail:
     """
-    Fetches detailed GitHub metadata for a pull request.
+    Fetches detailed metadata for a pull request from database or GitHub API fallback.
     """
     if not _is_repo_configured(owner, repo):
         raise HTTPException(status_code=404, detail=f"Repository '{owner}/{repo}' is not configured in CodeSage.")
+
+    try:
+        db_repo = get_repository_by_owner_repo(db, owner, repo)
+        if db_repo:
+            db_pr = get_pull_request_by_number(db, db_repo.id, number)
+            if db_pr:
+                summary = _map_db_pr_summary(db_pr)
+                review_count = len(db_pr.reviews) if db_pr.reviews else 0
+                return PullRequestDetail(
+                    **summary.model_dump(),
+                    changed_files=db_pr.changed_files,
+                    additions=db_pr.additions,
+                    deletions=db_pr.deletions,
+                    commits=db_pr.commits,
+                    comments=review_count
+                )
+    except Exception as e:
+        logger.warning(f"Database query error for get_pull_request_detail({owner}/{repo}#{number}): {e}")
 
     pr_data = get_pull_request(owner, repo, number)
     if not pr_data:
@@ -220,13 +359,44 @@ def get_pull_request_detail(owner: str, repo: str, number: int) -> PullRequestDe
 
 
 @router.get("/pulls/{owner}/{repo}/{number}/review", response_model=PullRequestReviewResponse)
-def get_pull_request_review_status(owner: str, repo: str, number: int) -> PullRequestReviewResponse:
+def get_pull_request_review_status(
+    owner: str,
+    repo: str,
+    number: int,
+    db: Session = Depends(get_db)
+) -> PullRequestReviewResponse:
     """
-    Fetches CodeSage review status and latest review details for a pull request.
+    Fetches CodeSage review status and latest review details for a pull request from database or GitHub API fallback.
     """
     if not _is_repo_configured(owner, repo):
         raise HTTPException(status_code=404, detail=f"Repository '{owner}/{repo}' is not configured in CodeSage.")
 
+    # 1. Attempt database lookup first
+    try:
+        db_repo = get_repository_by_owner_repo(db, owner, repo)
+        if db_repo:
+            db_pr = get_pull_request_by_number(db, db_repo.id, number)
+            if db_pr and db_pr.reviews:
+                reviews = list_reviews_for_pr(db, db_pr.id)
+                latest_review = reviews[-1]
+                latest_summary = ReviewCommentSummary(
+                    comment_id=latest_review.id,
+                    created_at=latest_review.created_at.isoformat() if latest_review.created_at else "",
+                    updated_at=latest_review.created_at.isoformat() if latest_review.created_at else "",
+                    overall_rating=latest_review.overall_rating,
+                    markdown=latest_review.markdown or ""
+                )
+                return PullRequestReviewResponse(
+                    repository=f"{owner}/{repo}",
+                    pull_number=number,
+                    reviewed=True,
+                    review_count=len(reviews),
+                    latest_review=latest_summary
+                )
+    except Exception as e:
+        logger.warning(f"Database query error for get_pull_request_review_status({owner}/{repo}#{number}): {e}")
+
+    # 2. GitHub issue comment parsing fallback
     comments = list_issue_comments(owner, repo, number, max_pages=5)
     codesage_comments = [c for c in comments if is_codesage_review_comment(c.get("body", ""))]
 
@@ -239,7 +409,6 @@ def get_pull_request_review_status(owner: str, repo: str, number: int) -> PullRe
             latest_review=None
         )
 
-    # Sort comments chronologically
     codesage_comments.sort(key=lambda c: c.get("created_at", ""))
     latest = codesage_comments[-1]
 

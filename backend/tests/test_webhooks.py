@@ -71,7 +71,7 @@ def test_webhook_valid_pr_events(client, dummy_secret, mocker):
             content=body
         )
         assert response.status_code == 200
-        assert response.json() == {"status": "received"}
+        assert response.json()["status"] == "received"
 
 
 def test_webhook_ignored_pr_action(client, dummy_secret):

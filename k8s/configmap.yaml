@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: codesage-config
+  namespace: codesage-production
+data:
+  DATABASE_URL: "postgresql://codesage:codesage_pass@postgres-service:5432/codesage_db"
+  REDIS_URL: "redis://redis-service:6379/0"
+  CORS_ORIGINS: "https://codesage.ai,https://app.codesage.ai"
+  WORKER_CONCURRENCY: "5"
+  MAX_RETRIES: "3"
+  JOB_TIMEOUT: "300"
+  GEMINI_MODEL: "gemini-2.5-flash"
+  NEXT_PUBLIC_API_BASE_URL: "https://api.codesage.ai"

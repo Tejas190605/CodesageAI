@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     # Monitored Repositories & CORS Configuration
     CODESAGE_REPOSITORIES: str = ""
     CORS_ORIGINS: str = "http://localhost:3000"
+    FRONTEND_URL: str = "http://localhost:3000"
 
     # Database Persistence Configuration
     DATABASE_URL: str = "sqlite:///./codesage.db"

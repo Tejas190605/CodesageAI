@@ -7,6 +7,9 @@ from app.config import settings
 logger = logging.getLogger("codesage.database")
 
 db_url = settings.DATABASE_URL
+if db_url.startswith("postgres://"):
+    db_url = db_url.replace("postgres://", "postgresql://", 1)
+
 connect_args = {}
 engine_kwargs = {"pool_pre_ping": True}
 

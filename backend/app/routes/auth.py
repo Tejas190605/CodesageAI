@@ -36,7 +36,7 @@ def github_login():
     params = {
         "client_id": client_id,
         "scope": "read:user user:email read:org",
-        "redirect_uri": "http://localhost:3000/api/auth/github/callback"
+        "redirect_uri": f"{settings.FRONTEND_URL.rstrip('/')}/api/auth/github/callback"
     }
     url = f"https://github.com/login/oauth/authorize?{urllib.parse.urlencode(params)}"
     return {"oauth_enabled": True, "auth_url": url}
@@ -133,7 +133,8 @@ def github_callback(code: str, response: Response, db: Session = Depends(get_db)
     )
 
     # Set HTTP-only cookie for secure session persistence
-    response = RedirectResponse(url="http://localhost:3000/profile", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+    redirect_target = f"{settings.FRONTEND_URL.rstrip('/')}/profile"
+    response = RedirectResponse(url=redirect_target, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
     response.set_cookie(
         key="codesage_session",
         value=access_token,

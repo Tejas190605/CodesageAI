@@ -1,7 +1,7 @@
 """phase_5c_policy_engine
 
 Revision ID: 006_phase_5c_policy_engine
-Revises: 005_phase_5b_repository_intelligence
+Revises: 005_repo_intelligence
 Create Date: 2026-08-05 09:00:00.000000
 
 """
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 
 revision: str = "006_phase_5c_policy_engine"
-down_revision: Union[str, None] = "005_phase_5b_repository_intelligence"
+down_revision: Union[str, None] = "005_repo_intelligence"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

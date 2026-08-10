@@ -1,6 +1,6 @@
 """phase_5b_repository_intelligence
 
-Revision ID: 005_phase_5b_repository_intelligence
+Revision ID: 005_repo_intelligence
 Revises: 004_phase_5a_ai_schema
 Create Date: 2026-08-05 08:50:00.000000
 
@@ -10,7 +10,7 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision: str = "005_phase_5b_repository_intelligence"
+revision: str = "005_repo_intelligence"
 down_revision: Union[str, None] = "004_phase_5a_ai_schema"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None

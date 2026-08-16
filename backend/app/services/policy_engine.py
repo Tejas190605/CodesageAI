@@ -1,6 +1,6 @@
 import hashlib
 import logging
-from typing import List, Dict, Any, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from sqlalchemy.orm import Session
 from app.models.db import PolicyEvaluation, RuleEvaluation
 from app.models.review import StructuredReview, ReviewFinding

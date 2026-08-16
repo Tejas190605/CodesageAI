@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from app.services.llm_providers.base_provider import BaseLLMProvider, LLMResponse
 from app.services.llm_providers.gemini_provider import GeminiProvider
 from app.services.llm_providers.openai_provider import OpenAIProvider

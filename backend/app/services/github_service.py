@@ -29,10 +29,32 @@ def _is_transient_github_error(exception: Exception) -> bool:
     return False
 
 
-def _get_headers() -> Dict[str, str]:
+def _get_headers(installation_id: Optional[int] = None) -> Dict[str, str]:
+    token = None
+    if installation_id:
+        from app.services.github_app_service import get_installation_access_token
+        token = get_installation_access_token(installation_id)
+    if not token:
+        # Check active installation in DB
+        try:
+            from app.database import SessionLocal
+            from app.db_repositories.installation_repo import list_installations
+            with SessionLocal() as db:
+                insts = list_installations(db)
+                if insts:
+                    from app.services.github_app_service import get_installation_access_token
+                    token = get_installation_access_token(insts[0].installation_id)
+        except Exception:
+            pass
+
+    if not token:
+        token = settings.GITHUB_TOKEN
+
+    auth_header = f"token {token}" if token and (token.startswith("ghs_") or token.startswith("github_pat_") or token.startswith("ghp_")) else f"Bearer {token}"
     return {
-        "Authorization": f"Bearer {settings.GITHUB_TOKEN}",
-        "Accept": "application/vnd.github+json"
+        "Authorization": auth_header,
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "CodeSage-AI-Agent"
     }
 
 

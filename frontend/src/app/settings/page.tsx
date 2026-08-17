@@ -75,7 +75,7 @@ export default function SettingsPage() {
 
             <div className="p-2.5 rounded-lg bg-zinc-950 border border-zinc-800">
               <div className="font-mono font-semibold text-indigo-400">CODESAGE_REPOSITORIES</div>
-              <p className="mt-1">Comma-separated list of monitored repositories e.g. <code className="text-zinc-300">Tejas190605/codexproj,owner/repo2</code>.</p>
+              <p className="mt-1">Comma-separated list of monitored repositories e.g. <code className="text-zinc-300">Tejas190605/ResumeIQ,owner/repo2</code>.</p>
             </div>
           </div>
         </Card>

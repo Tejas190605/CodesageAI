@@ -10,7 +10,7 @@ import { SearchResultChunk } from '@/lib/types';
 import { Search, Code2, Sparkles, Filter } from 'lucide-react';
 
 export default function CodeSearchPage() {
-  const [repository, setRepository] = useState<string>('Tejas190605/codexproj');
+  const [repository, setRepository] = useState<string>('Tejas190605/ResumeIQ');
   const [query, setQuery] = useState<string>('');
   const [language, setLanguage] = useState<string>('');
   const [results, setResults] = useState<SearchResultChunk[]>([]);

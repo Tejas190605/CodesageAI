@@ -150,7 +150,7 @@ export default function DashboardPage() {
                 <PullRequestRow
                   key={pr.number}
                   owner="Tejas190605"
-                  repo="codexproj"
+                  repo="ResumeIQ"
                   pr={pr}
                 />
               ))}

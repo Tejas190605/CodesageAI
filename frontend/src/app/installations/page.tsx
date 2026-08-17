@@ -193,7 +193,7 @@ export default function InstallationsPage() {
                   <label className="block text-zinc-400 mb-1 font-medium">Repository Name</label>
                   <input
                     type="text"
-                    placeholder="e.g. codexproj"
+                    placeholder="e.g. ResumeIQ"
                     value={repoName}
                     onChange={(e) => setRepoName(e.target.value)}
                     required

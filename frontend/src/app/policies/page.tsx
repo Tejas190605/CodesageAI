@@ -12,7 +12,7 @@ import { ShieldCheck, Sliders, CheckCircle2, Lock } from 'lucide-react';
 export default function PoliciesPage() {
   const [policies, setPolicies] = useState<ReviewPolicyInfo[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
-  const [repository, setRepository] = useState<string>('Tejas190605/codexproj');
+  const [repository, setRepository] = useState<string>('Tejas190605/ResumeIQ');
   const [effectivePolicy, setEffectivePolicy] = useState<Record<string, unknown> | null>(null);
 
   useEffect(() => {
@@ -22,7 +22,7 @@ export default function PoliciesPage() {
         const pList = await getPolicies();
         setPolicies(pList || []);
 
-        const eff = await getEffectivePolicy('Tejas190605', 'codexproj');
+        const eff = await getEffectivePolicy('Tejas190605', 'ResumeIQ');
         setEffectivePolicy(eff.effective_policy || null);
       } catch (err) {
         console.error('Failed to load policies:', err);

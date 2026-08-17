@@ -102,3 +102,62 @@ def test_unicode_truncation_safety():
     assert "[PATCH TRUNCATED]" in formatted
     # String operations must complete without raising UnicodeDecodeError / UnicodeEncodeError
     assert isinstance(formatted, str)
+
+
+def test_sanitize_file_path_app_py_exact_match():
+    """Regression test: Asserts that 'app.py' remains exactly 'app.py' and literal backslashes are normalized without character corruption."""
+    from app.utils.diff_utils import sanitize_file_path
+
+    assert sanitize_file_path("app.py") == "app.py"
+    assert sanitize_file_path(r"\app.py") == "app.py"
+    assert sanitize_file_path("\\app.py") == "app.py"
+    assert sanitize_file_path("src/app.py") == "src/app.py"
+    assert sanitize_file_path(r"src\app.py") == "src/app.py"
+
+
+def test_path_normalization_and_canonicalization_suite():
+    """
+    Comprehensive regression suite asserting that legitimate GitHub paths are preserved exactly,
+    Windows backslashes are normalized, and canonical resolution matches GitHub API paths.
+    """
+    from app.utils.diff_utils import normalize_file_path, sanitize_file_path, resolve_canonical_file_path
+
+    canonical_github_files = [
+        "app.py",
+        "src/app.py",
+        "frontend/src/app/page.tsx",
+        "backend/app/services/github_service.py",
+        "docs/my document-v1.2.md",
+        "components/user_profile-card.tsx",
+        "deeply/nested/path/to/module.py",
+        "🚀_special_path.py"
+    ]
+
+    # 1. Exact preservation of canonical GitHub paths
+    for path in canonical_github_files:
+        assert normalize_file_path(path) == path
+        assert sanitize_file_path(path) == path
+        assert resolve_canonical_file_path(path, canonical_github_files) == path
+
+    # 2. Windows backslash normalization
+    assert normalize_file_path(r"src\app.py") == "src/app.py"
+    assert resolve_canonical_file_path(r"src\app.py", canonical_github_files) == "src/app.py"
+    assert resolve_canonical_file_path(r"backend\app\services\github_service.py", canonical_github_files) == "backend/app/services/github_service.py"
+
+    # 3. Leading relative prefix handling
+    assert normalize_file_path("./app.py") == "app.py"
+    assert resolve_canonical_file_path("./app.py", canonical_github_files) == "app.py"
+
+    # 4. LLM / Escaped string resolution against authoritative GitHub paths
+    assert resolve_canonical_file_path(r"\app.py", canonical_github_files) == "app.py"
+    assert resolve_canonical_file_path("\app.py", canonical_github_files) == "app.py"  # Note: Python interprets \a as ASCII Bell \x07 in unescaped string literals
+    assert resolve_canonical_file_path("page.tsx", canonical_github_files) == "frontend/src/app/page.tsx"
+
+    # 5. Filenames with spaces, hyphens, underscores
+    assert resolve_canonical_file_path("docs/my document-v1.2.md", canonical_github_files) == "docs/my document-v1.2.md"
+    assert resolve_canonical_file_path("components/user_profile-card.tsx", canonical_github_files) == "components/user_profile-card.tsx"
+
+    # 6. Control character rejection / defensive fallback
+    dirty_path = "\x00bad_\x1fpath.py"
+    assert "\x00" not in sanitize_file_path(dirty_path)
+    assert "\x1f" not in sanitize_file_path(dirty_path)

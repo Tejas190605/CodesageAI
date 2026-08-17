@@ -94,9 +94,15 @@ def evaluate_policy_for_pr(
                 suggested_fix=f.suggested_fix
             ))
 
-    # 3. Path Suppression & Finding Deduplication
+    # 3. Path Suppression, Canonicalization & Finding Deduplication
     filtered_results: List[RuleResult] = []
     seen_fingerprints = set()
+    canonical_files = [f.get("filename", "") for f in files if f.get("filename")]
+    from app.utils.diff_utils import resolve_canonical_file_path
+
+    for r in all_rule_results:
+        if r.file_path:
+            r.file_path = resolve_canonical_file_path(r.file_path, canonical_files)
 
     for r in all_rule_results:
         if r.file_path and is_path_ignored(r.file_path, ignore_paths):

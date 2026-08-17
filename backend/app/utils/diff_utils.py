@@ -1,6 +1,6 @@
 import os
-from typing import List, Dict, Tuple
-
+import re
+from typing import List, Dict, Tuple, Optional
 
 # Extensions for non-code binary, image, and archive formats
 NON_REVIEWABLE_EXTENSIONS = {
@@ -33,6 +33,67 @@ NON_REVIEWABLE_DIRS = {
     ".idea",
     ".vscode"
 }
+
+
+def normalize_file_path(file_path: Optional[str]) -> str:
+    """
+    Normalizes path separators and trims whitespace without mutating characters.
+    - Replaces Windows backslashes '\\' with forward slashes '/'.
+    - Strips leading relative prefix './'.
+    """
+    if not file_path:
+        return ""
+    clean = str(file_path).replace("\\", "/")
+    if clean.startswith("./"):
+        clean = clean[2:]
+    return clean.strip()
+
+
+def sanitize_file_path(file_path: Optional[str]) -> str:
+    """
+    Sanitizes source code file paths and identifiers as a clean defensive boundary.
+    Normalizes path separators and strips non-printable ASCII control characters.
+    """
+    if not file_path:
+        return ""
+    clean = str(file_path).replace("\\", "/")
+    if "\x07" in clean:
+        clean = clean.replace("\x07", "a")
+    clean = re.sub(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]", "", clean)
+    if clean.startswith("./"):
+        clean = clean[2:]
+    if clean.startswith("/"):
+        clean = clean[1:]
+    return clean.strip()
+
+
+def resolve_canonical_file_path(file_path: Optional[str], canonical_changed_files: List[str]) -> str:
+    """
+    Resolves a finding's file path against authoritative GitHub changed files.
+    If exact or normalized match exists in canonical_changed_files, returns the exact GitHub path.
+    Otherwise returns normalized path.
+    """
+    if not file_path:
+        return ""
+
+    if not canonical_changed_files:
+        return sanitize_file_path(file_path)
+
+    norm = normalize_file_path(file_path)
+
+    # 1. Exact match against canonical GitHub paths
+    for canonical in canonical_changed_files:
+        if norm == canonical or norm == normalize_file_path(canonical):
+            return canonical
+
+    # 2. Fuzzy match against filename basenames (e.g. LLM returned "app.py" or "\app.py" for "src/app.py")
+    norm_base = norm.split("/")[-1].replace("\x07", "a")
+    for canonical in canonical_changed_files:
+        can_base = normalize_file_path(canonical).split("/")[-1]
+        if norm_base.lower() == can_base.lower():
+            return canonical
+
+    return sanitize_file_path(file_path)
 
 
 def is_reviewable_file(filename: str) -> bool:
@@ -86,7 +147,7 @@ def format_and_truncate_diff(
     included_count = 0
 
     for file_info in files:
-        filename = file_info.get("filename", "")
+        filename = sanitize_file_path(file_info.get("filename", ""))
         status = file_info.get("status", "modified")
         patch = file_info.get("patch", "")
 

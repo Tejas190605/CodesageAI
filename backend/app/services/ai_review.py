@@ -107,6 +107,13 @@ Code Changes:
         raw_json = _generate_structured_content_with_retry(client, prompt)
         structured_review = StructuredReview.model_validate_json(raw_json)
 
+        # Canonicalize finding file paths against authoritative GitHub changed files
+        canonical_files = [f.get("filename", "") for f in files if f.get("filename")]
+        from app.utils.diff_utils import resolve_canonical_file_path
+        for finding in structured_review.findings:
+            if finding.file:
+                finding.file = resolve_canonical_file_path(finding.file, canonical_files)
+
         logger.info(f"Successfully generated structured AI review (Rating: {structured_review.overall_rating}/10, Findings: {len(structured_review.findings)}).")
         return structured_review
 

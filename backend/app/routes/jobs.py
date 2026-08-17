@@ -14,9 +14,18 @@ from app.services.queue_service import (
     get_worker_health_metrics,
 )
 
+from pydantic import BaseModel
+
 logger = logging.getLogger("codesage.routes.jobs")
 
 router = APIRouter(tags=["jobs-api"])
+
+
+class TriggerJobRequest(BaseModel):
+    owner: str
+    repo: str
+    pr_number: int
+    pr_title: Optional[str] = None
 
 
 def _map_job_dict(job: ReviewJob) -> Dict[str, Any]:
@@ -51,6 +60,25 @@ def get_jobs(
     """Lists background AI review jobs ordered chronologically newest first."""
     jobs = list_jobs(db, status=status, limit=limit, offset=offset)
     return [_map_job_dict(j) for j in jobs]
+
+
+@router.post("/api/jobs/trigger")
+def trigger_review_job(
+    req: TriggerJobRequest,
+    db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    """Manually enqueues an AI review job for a Pull Request."""
+    job = enqueue_review(
+        db=db,
+        owner=req.owner,
+        repo=req.repo,
+        pr_number=req.pr_number,
+        pr_title=req.pr_title or f"PR #{req.pr_number}"
+    )
+    return {
+        "message": f"Enqueued review job '{job.job_id}' for {req.owner}/{req.repo}#{req.pr_number}.",
+        "job": _map_job_dict(job)
+    }
 
 
 @router.get("/api/jobs/{job_id}")

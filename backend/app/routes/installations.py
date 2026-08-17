@@ -34,7 +34,11 @@ def get_all_installations(
     current_user: User = Depends(get_current_user)
 ):
     """Lists all active GitHub App installations."""
+    from app.services.github_app_service import sync_installations_and_repositories
     insts = list_installations(db)
+    if not insts:
+        insts = sync_installations_and_repositories(db)
+
     return [
         {
             "id": i.id,
@@ -47,6 +51,21 @@ def get_all_installations(
         }
         for i in insts
     ]
+
+
+@router.post("/sync")
+def trigger_installation_sync(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(["admin", "member"]))
+):
+    """Triggers live synchronization of GitHub App installations and monitored repository links."""
+    from app.services.github_app_service import sync_installations_and_repositories
+    synced = sync_installations_and_repositories(db)
+    return {
+        "status": "synchronized",
+        "installations_count": len(synced),
+        "installations": [i.installation_id for i in synced]
+    }
 
 
 @router.get("/{installation_id}")

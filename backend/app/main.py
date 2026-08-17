@@ -33,8 +33,16 @@ logger = logging.getLogger("codesage.main")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """FastAPI lifespan context manager initializing database schema & worker loop on launch."""
+    """FastAPI lifespan context manager initializing database schema, syncing installations & launching worker loop."""
     init_db()
+    try:
+        from app.database import SessionLocal
+        from app.services.github_app_service import sync_installations_and_repositories
+        with SessionLocal() as db:
+            sync_installations_and_repositories(db)
+    except Exception as e:
+        logger.warning(f"Initial installation sync skipped: {e}")
+
     worker_task = asyncio.create_task(run_worker_loop())
     yield
     worker_task.cancel()

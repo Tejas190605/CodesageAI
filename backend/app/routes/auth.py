@@ -22,7 +22,7 @@ router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
 
 @router.get("/github/login")
-def github_login():
+def github_login(request: Request):
     """Returns or redirects to GitHub OAuth 2.0 authorization URL."""
     client_id = settings.GITHUB_CLIENT_ID
     if not client_id:
@@ -33,10 +33,14 @@ def github_login():
             "auth_url": None
         }
 
+    callback_url = str(request.url_for("github_callback"))
+    if callback_url.startswith("http://") and "localhost" not in callback_url and "127.0.0.1" not in callback_url:
+        callback_url = "https://" + callback_url[7:]
+
     params = {
         "client_id": client_id,
         "scope": "read:user user:email read:org",
-        "redirect_uri": f"{settings.FRONTEND_URL.rstrip('/')}/api/auth/github/callback"
+        "redirect_uri": callback_url
     }
     url = f"https://github.com/login/oauth/authorize?{urllib.parse.urlencode(params)}"
     return {"oauth_enabled": True, "auth_url": url}

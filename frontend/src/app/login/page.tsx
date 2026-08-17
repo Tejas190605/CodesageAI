@@ -43,7 +43,7 @@ export default function LoginPage() {
     if (authUrl) {
       window.location.href = authUrl;
     } else {
-      alert('GitHub OAuth credentials are not configured in environment settings. Running in development admin mode.');
+      alert(message || 'GitHub OAuth is currently unavailable. Please verify backend environment configuration.');
     }
   };
 

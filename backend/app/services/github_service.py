@@ -295,3 +295,45 @@ def comment_on_pr(repo_full_name: str, pr_number: int, comment: str) -> int:
     except Exception as e:
         logger.error(f"Failed to post comment on PR {repo_full_name}#{pr_number}: {e}")
         raise
+
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(min=1, max=6),
+    retry=retry_if_exception(_is_transient_github_error),
+    before_sleep=lambda retry_state: logger.warning("Retrying GitHub post_pull_request_review..."),
+    reraise=True
+)
+def post_pull_request_review(
+    repo_full_name: str,
+    pr_number: int,
+    body: str,
+    event: str = "COMMENT",
+    comments: Optional[List[Dict[str, Any]]] = None
+) -> int:
+    """
+    Posts an official GitHub Pull Request Review (POST /repos/{owner}/{repo}/pulls/{pr_number}/reviews)
+    supporting optional inline review comments attached to changed lines.
+    Falls back to simple issue comment if pull request review fails.
+    """
+    url = f"https://api.github.com/repos/{repo_full_name}/pulls/{pr_number}/reviews"
+    payload: Dict[str, Any] = {
+        "body": body,
+        "event": event if event in ("APPROVE", "REQUEST_CHANGES", "COMMENT") else "COMMENT"
+    }
+    if comments:
+        payload["comments"] = comments
+
+    try:
+        response = requests.post(
+            url,
+            headers=_get_headers(),
+            json=payload,
+            timeout=settings.GITHUB_API_TIMEOUT
+        )
+        response.raise_for_status()
+        logger.info(f"Successfully posted PR review to {repo_full_name}#{pr_number} (HTTP {response.status_code}).")
+        return response.status_code
+    except Exception as e:
+        logger.warning(f"Failed posting official PR review to {repo_full_name}#{pr_number}: {e}. Falling back to issue comment...")
+        return comment_on_pr(repo_full_name, pr_number, body)

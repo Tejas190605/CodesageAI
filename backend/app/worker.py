@@ -163,9 +163,18 @@ async def process_review_job(
                 description=f"Completed AI code review for {owner}/{repo}#{pr_number} (Decision: {review_decision['event']})."
             )
 
-        # 4. Post review comment to GitHub PR thread
+        # 4. Post official GitHub PR review (with inline comments if available) or fallback to summary comment
         try:
-            comment_on_pr(f"{owner}/{repo}", pr_number, markdown_body)
+            from app.services.github_review_publisher import prepare_inline_comments
+            inline_comments, _ = prepare_inline_comments(rule_results, files)
+
+            post_pull_request_review(
+                repo_full_name=f"{owner}/{repo}",
+                pr_number=pr_number,
+                body=markdown_body,
+                event=review_decision.get("event", "COMMENT"),
+                comments=inline_comments if inline_comments else None
+            )
             with SessionLocal() as db:
                 record_event(
                     db=db,
